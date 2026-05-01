@@ -14,7 +14,7 @@ Instead, please report security vulnerabilities by emailing:
 
 **security@phantomhase.dev** (placeholder — replace with actual email)
 
-Or use [GitHub's private vulnerability reporting](https://github.com/PhantomHase/pqcrypto-rs/security/advisories/new).
+Or use [GitHub's private vulnerability reporting](https://github.com/omarf/pqcrypto-rs/security/advisories/new).
 
 ### What to include
 

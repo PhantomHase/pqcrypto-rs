@@ -21,7 +21,7 @@ Thank you for your interest in contributing to PQCrypto-RS!
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone the repository
-git clone https://github.com/PhantomHase/pqcrypto-rs.git
+git clone https://github.com/omarf/pqcrypto-rs.git
 cd pqcrypto-rs
 
 # Build
