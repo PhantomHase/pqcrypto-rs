@@ -19,7 +19,7 @@ categories = ["cryptography", "no-std"]
 
 [workspace.dependencies]
 # Core dependencies
-rand = { version = "0.8", features = ["getrandom"] }
+rand = { version = "0.10", features = ["getrandom"] }
 sha3 = "0.10"
 subtle = "2.6"
 zeroize = { version = "1.8", features = ["derive"] }
