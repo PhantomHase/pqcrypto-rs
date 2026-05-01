@@ -148,15 +148,18 @@ pqcrypto-rs/
 
 ## Roadmap
 
-- [x] Phase 0: Core math primitives (NTT, sampling, reduction)
-- [x] Phase 1: ML-KEM-768 (keygen, encaps, decaps)
-- [x] Phase 2: ML-DSA-65 (keygen, sign, verify) ✅ All 24 tests pass
-- [x] Phase 3: CLI tool + hybrid encryption
-- [x] Phase 4: SLH-DSA stub
-- [ ] Phase 5: Negacyclic NTT optimization
-- [ ] Phase 6: WASM compilation (wasm-pack)
-- [ ] Phase 7: FIPS 203 compliant encode/decode
-- [ ] Phase 8: Full SLH-DSA implementation
+- [x] Phase 0: Core math primitives (polynomial, sampling, reduction)
+- [x] Phase 1: ML-KEM-768 (keygen, encaps, decaps, hybrid encryption)
+- [x] Phase 2: ML-DSA-65 (keygen, sign, verify) — 24 tests pass, verified 5x
+- [x] Phase 3: CLI tool (keygen, kem-encrypt, kem-decrypt, sign, verify)
+- [x] Phase 4: SLH-DSA stub (FIPS 205 placeholder)
+- [x] Phase 5: Benchmarks (Criterion) + examples
+- [ ] Phase 6: Negacyclic NTT optimization (O(n log n) poly multiplication)
+- [ ] Phase 7: FIPS 203 compliant encode/decode (fix KEM round-trip)
+- [ ] Phase 8: Full SLH-DSA implementation (WOTS+, XMSS, FORS, Hypertree)
+- [ ] Phase 9: WASM compilation (wasm-pack + browser demo)
+- [ ] Phase 10: KAT tests (NIST Known Answer Tests) + coverage >95%
+- [ ] Phase 11: GitHub Actions CI/CD + security audit workflow
 
 ## Building
 
