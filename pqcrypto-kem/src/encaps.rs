@@ -200,10 +200,12 @@ fn decode_message(m: &[u8; SEED_LEN]) -> Poly {
 /// Encode a polynomial back to a 32-byte message.
 ///
 /// This is the inverse of decode_message.
-/// For each coefficient, round to nearest: 0 or ceil(q/2).
+/// For each coefficient, round to nearest: 0 or ceil(q/2) = 1665.
+///
+/// The distance is computed modulo q to handle wrap-around correctly.
 pub(crate) fn encode_message(poly: &Poly) -> [u8; SEED_LEN] {
     let mut m = [0u8; SEED_LEN];
-    let half_q = Q / 2;
+    let target: u16 = ((Q as u32 + 1) / 2) as u16; // ceil(q/2) = 1665
 
     for (byte_idx, byte) in m.iter_mut().enumerate() {
         let mut val = 0u8;
@@ -211,17 +213,14 @@ pub(crate) fn encode_message(poly: &Poly) -> [u8; SEED_LEN] {
             let coeff_idx = byte_idx * 8 + bit_idx;
             if coeff_idx < N {
                 let c = poly.coeffs[coeff_idx];
-                // If closer to ceil(q/2) than to 0, set bit
-                if c > half_q && c < Q - half_q + 1 {
+                // Distance to 0 (modular)
+                let dist0 = if c <= Q / 2 { c } else { Q - c };
+                // Distance to target (modular)
+                let diff = if c >= target { c - target } else { target - c };
+                let dist1 = if diff <= Q / 2 { diff } else { Q - diff };
+                // Set bit if closer to target
+                if dist1 < dist0 {
                     val |= 1 << bit_idx;
-                } else {
-                    // Distance to 0
-                    let dist0 = c;
-                    // Distance to ceil(q/2)
-                    let dist1 = if c >= 1665 { c - 1665 } else { 1665 - c };
-                    if dist1 < dist0 {
-                        val |= 1 << bit_idx;
-                    }
                 }
             }
         }

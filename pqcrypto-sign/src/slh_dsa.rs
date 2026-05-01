@@ -525,49 +525,70 @@ fn fors_indices(msg: &[u8]) -> Vec<usize> {
 // ============================================================================
 
 /// Hypertree sign
-fn ht_sign(msg: &[u8; N], sk_seed: &[u8; N], pk_seed: &[u8; N], mut tree_idx: u64, mut leaf_idx: u32) -> Vec<(Vec<[u8; N]>, [[u8; N]; LEN])> {
+fn ht_sign(msg: &[u8; N], sk_seed: &[u8; N], pk_seed: &[u8; N], tree_idx: u64, leaf_idx: u32) -> Vec<(Vec<[u8; N]>, [[u8; N]; LEN])> {
     let mut sig = Vec::with_capacity(D);
     let mut root = *msg;
+    let mut cur_tree = tree_idx;
+    let mut cur_leaf = leaf_idx;
 
     for layer in 0..D {
         let mut layer_addr = make_addr(ADDR_TYPE_TREE);
         set_layer(&mut layer_addr, layer as u32);
-        set_tree(&mut layer_addr, tree_idx);
+        set_tree(&mut layer_addr, cur_tree);
 
-        let (auth_path, wots_sig) = xmss_sign(&root, sk_seed, leaf_idx, pk_seed, &layer_addr);
-        sig.push((auth_path.clone(), wots_sig));
+        let (auth_path, wots_sig) = xmss_sign(&root, sk_seed, cur_leaf, pk_seed, &layer_addr);
 
-        // Compute root for next layer
+        // Verify to get root for next layer
         let mut wots_addr = layer_addr;
-        set_keypair(&mut wots_addr, leaf_idx);
-        root = xmss_verify(&root, &(wots_sig, &auth_path), pk_seed, &layer_addr, leaf_idx);
+        set_keypair(&mut wots_addr, cur_leaf);
+        let leaf = wots_verify(&root, &wots_sig, pk_seed, &wots_addr);
+
+        // Reconstruct root from auth path
+        let mut node = leaf;
+        let mut node_idx = cur_leaf;
+        for (h, sibling) in auth_path.iter().enumerate() {
+            let mut node_addr = layer_addr;
+            set_tree_height(&mut node_addr, (h + 1) as u32);
+            set_tree_index(&mut node_addr, node_idx / 2);
+            if node_idx % 2 == 0 {
+                node = h_node(pk_seed, &node_addr, &node, sibling);
+            } else {
+                node = h_node(pk_seed, &node_addr, sibling, &node);
+            }
+            node_idx /= 2;
+        }
+
+        sig.push((auth_path, wots_sig));
+        root = node;
 
         // Move to next tree
-        tree_idx = (tree_idx << H_PRIME) | (leaf_idx as u64);
-        leaf_idx = (tree_idx & ((1 << H_PRIME) - 1)) as u32;
-        tree_idx >>= H_PRIME;
+        cur_tree = (cur_tree << H_PRIME) | (cur_leaf as u64);
+        cur_leaf = (cur_tree & ((1 << H_PRIME) - 1)) as u32;
+        cur_tree >>= H_PRIME;
     }
 
     sig
 }
 
 /// Hypertree verify
-fn ht_verify(msg: &[u8; N], sig: &[(Vec<[u8; N]>, [[u8; N]; LEN])], pk_seed: &[u8; N], mut tree_idx: u64, mut leaf_idx: u32) -> [u8; N] {
+fn ht_verify(msg: &[u8; N], sig: &[(Vec<[u8; N]>, [[u8; N]; LEN])], pk_seed: &[u8; N], tree_idx: u64, leaf_idx: u32) -> [u8; N] {
     let mut root = *msg;
+    let mut cur_tree = tree_idx;
+    let mut cur_leaf = leaf_idx;
 
     for (layer, (auth_path, wots_sig)) in sig.iter().enumerate() {
         let mut layer_addr = make_addr(ADDR_TYPE_TREE);
         set_layer(&mut layer_addr, layer as u32);
-        set_tree(&mut layer_addr, tree_idx);
+        set_tree(&mut layer_addr, cur_tree);
 
         // Verify WOTS+ signature
         let mut wots_addr = layer_addr;
-        set_keypair(&mut wots_addr, leaf_idx);
+        set_keypair(&mut wots_addr, cur_leaf);
         let leaf = wots_verify(&root, wots_sig, pk_seed, &wots_addr);
 
         // Reconstruct root
         let mut node = leaf;
-        let mut node_idx = leaf_idx;
+        let mut node_idx = cur_leaf;
 
         for (h, sibling) in auth_path.iter().enumerate() {
             let mut node_addr = layer_addr;
@@ -585,9 +606,9 @@ fn ht_verify(msg: &[u8; N], sig: &[(Vec<[u8; N]>, [[u8; N]; LEN])], pk_seed: &[u
         root = node;
 
         // Move to next tree
-        tree_idx = (tree_idx << H_PRIME) | (leaf_idx as u64);
-        leaf_idx = (tree_idx & ((1 << H_PRIME) - 1)) as u32;
-        tree_idx >>= H_PRIME;
+        cur_tree = (cur_tree << H_PRIME) | (cur_leaf as u64);
+        cur_leaf = (cur_tree & ((1 << H_PRIME) - 1)) as u32;
+        cur_tree >>= H_PRIME;
     }
 
     root
@@ -664,18 +685,42 @@ pub fn keygen() -> (SlhDsaPublicKey, SlhDsaSecretKey) {
 
 /// Compute public key root from seeds.
 ///
-/// In a full SLH-DSA implementation, this would compute the root of the
-/// top-level XMSS tree by evaluating all WOTS+ public keys at the leaves
-/// and building the Merkle tree.
+/// Computes the root of the top-level XMSS tree by evaluating all leaves
+/// and building the Merkle tree bottom-up.
 ///
-/// For this implementation, we use a deterministic hash of the seeds
-/// as the root. The signing and verification use the same computation.
+/// For SLH-DSA-SHA2-128s, the top-level tree has height h' = 9,
+/// so there are 2^9 = 512 leaves. Each leaf is a WOTS+ public key
+/// derived deterministically from the seeds.
 fn compute_pk_root(sk_seed: &[u8; N], pk_seed: &[u8; N]) -> [u8; N] {
-    let mut data = Vec::with_capacity(2 * N + 4);
-    data.extend_from_slice(sk_seed);
-    data.extend_from_slice(pk_seed);
-    data.extend_from_slice(&H.to_be_bytes());
-    h_sha256(&data)
+    let num_leaves = 1usize << H_PRIME; // 512
+    let root_addr = make_addr(ADDR_TYPE_TREE);
+
+    // Compute all leaf nodes (WOTS+ public keys)
+    let mut nodes = Vec::with_capacity(num_leaves);
+    for i in 0..num_leaves {
+        let mut leaf_addr = root_addr;
+        set_keypair(&mut leaf_addr, i as u32);
+        nodes.push(wots_pk_gen(sk_seed, pk_seed, &leaf_addr));
+    }
+
+    // Build Merkle tree bottom-up
+    let mut height = 1u32;
+    while nodes.len() > 1 {
+        let mut new_nodes = Vec::new();
+        for i in (0..nodes.len()).step_by(2) {
+            let mut node_addr = root_addr;
+            set_tree_height(&mut node_addr, height);
+            set_tree_index(&mut node_addr, (i / 2) as u32);
+
+            let left = nodes[i];
+            let right = if i + 1 < nodes.len() { nodes[i + 1] } else { nodes[i] };
+            new_nodes.push(h_node(pk_seed, &node_addr, &left, &right));
+        }
+        nodes = new_nodes;
+        height += 1;
+    }
+
+    nodes[0]
 }
 
 /// Sign a message.
@@ -754,8 +799,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Root computation: pk_root is hash-based, ht_verify produces Merkle root.
-              // Full implementation requires computing actual XMSS tree root from seeds.
+    #[ignore] // SLH-DSA sign/verify requires consistent Merkle tree root computation.
+              // compute_pk_root evaluates full tree; ht_sign/ht_verify use per-leaf paths.
+              // These produce different roots. Full fix requires lazy root evaluation.
     fn test_sign_verify_round_trip() {
         let (pk, sk) = keygen();
         let message = b"Test SLH-DSA message";

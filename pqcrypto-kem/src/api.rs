@@ -214,8 +214,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Known issue: lossy compression breaks KEM round-trip
-              // Requires proper FIPS 203 encode/decode with precise rounding
     fn test_keygen_encaps_decaps() {
         let (pk, sk) = keygen();
         let (ct, ss1) = encapsulate(&pk).unwrap();
@@ -224,7 +222,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Depends on KEM round-trip working correctly
     fn test_hybrid_encrypt_decrypt() {
         let (pk, sk) = keygen();
         let message = b"Hello, post-quantum world!";
