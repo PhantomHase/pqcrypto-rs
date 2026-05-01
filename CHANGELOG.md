@@ -73,4 +73,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ML-DSA signing incomplete (power2round/sample_in_ball issues)
 - Polynomial multiplication is O(n²) (NTT optimization planned)
 
-[0.1.0]: https://github.com/omarf/pqcrypto-rs/releases/tag/v0.1.0
+[0.1.0]: https://github.com/PhantomHase/pqcrypto-rs/releases/tag/v0.1.0
