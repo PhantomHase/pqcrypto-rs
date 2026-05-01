@@ -35,7 +35,7 @@ generic-array = "1"
 typenum = "1"
 
 # Dev dependencies
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 proptest = "1.5"
 
 [workspace.lints.rust]
