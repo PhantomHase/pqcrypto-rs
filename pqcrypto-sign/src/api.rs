@@ -108,7 +108,8 @@ impl MlDsa65SecretKey {
     /// Serialize to bytes (simplified).
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&self.0.zeta);
+        bytes.extend_from_slice(&self.0.rho);
+        bytes.extend_from_slice(&self.0.k);
         bytes.extend_from_slice(&self.0.tr);
         // Encode s1 and s2 (η bits per coefficient)
         for poly in &self.0.s1.polys {
@@ -194,7 +195,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // ML-DSA signing has issues
     fn test_sign_verify_api() {
         let (pk, sk) = keygen();
         let message = b"Hello, ML-DSA!";
@@ -204,7 +204,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Depends on signing working
     fn test_signature_serialization() {
         let (_, sk) = keygen();
         let message = b"Serialization test";

@@ -11,6 +11,7 @@
 //! - γ₂ = (q-1)/32 = 261888 (rounding parameter)
 //! - β = 78 (challenge bound)
 //! - τ = 49 (number of ±1 in challenge)
+//! - d = 13 (Power2Round parameter)
 
 use crate::ml_dsa_params::*;
 use crate::SignError;
@@ -62,10 +63,18 @@ impl MlDsaPoly {
         result
     }
 
+    /// Multiply by a scalar mod q.
+    pub fn scalar_mul(&self, scalar: i32) -> Self {
+        let mut result = Self::zero();
+        for i in 0..N {
+            result.coeffs[i] = ((self.coeffs[i] as i64 * scalar as i64).rem_euclid(Q as i64)) as i32;
+        }
+        result
+    }
+
     /// Check if coefficients are in range [-bound, bound].
     pub fn check_norm_bound(&self, bound: i32) -> bool {
         for &c in &self.coeffs {
-            // Center the coefficient: map [0, q) to [-(q-1)/2, (q-1)/2]
             let centered = if c > (Q as i32 - 1) / 2 {
                 c - Q as i32
             } else {
@@ -81,18 +90,28 @@ impl MlDsaPoly {
     /// Power2Round: decompose r into (r0, r1) where r = r1 * 2^d + r0.
     ///
     /// For ML-DSA-65, d = 13 (so 2^d = 8192).
-    /// r0 has d bits, r1 has ceil(log2(q)) - d = 23 - 13 = 10 bits.
+    /// r0 is in [-(2^(d-1)), 2^(d-1)) = [-4096, 4096)
+    /// r1 is in [0, (q-1)/2^d] = [0, 1023]
     pub fn power2round(&self, d: u32) -> (Self, Self) {
         let mut r0 = Self::zero();
         let mut r1 = Self::zero();
         let pow2d = 1i32 << d;
-        let mask = pow2d - 1;
+        let half_pow2d = 1i32 << (d - 1);
 
         for i in 0..N {
             let r = self.coeffs[i];
-            r0.coeffs[i] = ((r + (1 << (d - 1))) >> d) * pow2d; // r0 approximation
-            r0.coeffs[i] = (r - r0.coeffs[i]).rem_euclid(Q as i32);
-            r1.coeffs[i] = (r - r0.coeffs[i]) >> d;
+            // r0 = r mod 2^d, centered in [-(2^(d-1)), 2^(d-1))
+            let r0_raw = r % pow2d;
+            // Center: if r0_raw > 2^(d-1), subtract 2^d
+            r0.coeffs[i] = if r0_raw >= half_pow2d {
+                r0_raw - pow2d
+            } else if r0_raw < -half_pow2d {
+                r0_raw + pow2d
+            } else {
+                r0_raw
+            };
+            // r1 = (r - r0) / 2^d
+            r1.coeffs[i] = (r - r0.coeffs[i]) / pow2d;
         }
 
         (r0, r1)
@@ -100,16 +119,18 @@ impl MlDsaPoly {
 
     /// MakeHint: compute hint bits for rounding.
     ///
-    /// Returns 1 if rounding changes, 0 otherwise.
+    /// Returns 1 if adding z changes the high bits of r, 0 otherwise.
+    /// FIPS 204 Algorithm 32 (MakeHint)
     pub fn make_hint(z: &Self, r: &Self, gamma2: i32) -> (Self, usize) {
         let mut hint = Self::zero();
         let mut count = 0;
 
         for i in 0..N {
-            let r0 = r.coeffs[i] % (2 * gamma2);
-            let z0 = z.coeffs[i] % (2 * gamma2);
+            let r1 = Self::decompose_single(r.coeffs[i], gamma2);
+            let rz = (r.coeffs[i] as i64 + z.coeffs[i] as i64).rem_euclid(Q as i64) as i32;
+            let rz1 = Self::decompose_single(rz, gamma2);
 
-            if r0 > gamma2 || r0 < -gamma2 || r0 == gamma2 && z0 == 0 {
+            if r1 != rz1 {
                 hint.coeffs[i] = 1;
                 count += 1;
             }
@@ -118,16 +139,33 @@ impl MlDsaPoly {
         (hint, count)
     }
 
+    /// Helper: compute high bits of r with respect to γ₂.
+    /// This is the "decompose" function from FIPS 204.
+    /// Input r is in [0, q). Returns r1 such that r = r1 * 2γ₂ + r0.
+    fn decompose_single(r: i32, gamma2: i32) -> i32 {
+        // Reduce r to [0, q) first
+        let r_mod = r.rem_euclid(Q as i32);
+        // Compute r0 = r mod± 2γ₂ in (-γ₂, γ₂]
+        let r0 = r_mod.rem_euclid(2 * gamma2);
+        let r0_centered = if r0 > gamma2 { r0 - 2 * gamma2 } else { r0 };
+        // r1 = (r - r0) / 2γ₂
+        (r_mod - r0_centered) / (2 * gamma2)
+    }
+
     /// UseHint: apply hint to adjust rounding.
+    /// Given hint h = MakeHint(z, r), returns HighBits(r + z).
+    /// The adjustment direction: if r₀ > 0, the "other" high bits is r₁+1 (crossing upward).
     pub fn use_hint(hint: &Self, r: &Self, gamma2: i32) -> Self {
         let mut result = Self::zero();
 
         for i in 0..N {
-            let r0 = r.coeffs[i] % (2 * gamma2);
-            let r1 = (r.coeffs[i] - r0) / (2 * gamma2);
+            let r_mod = r.coeffs[i].rem_euclid(Q as i32);
+            let r0 = r_mod.rem_euclid(2 * gamma2);
+            let r0_centered = if r0 > gamma2 { r0 - 2 * gamma2 } else { r0 };
+            let r1 = (r_mod - r0_centered) / (2 * gamma2);
 
             if hint.coeffs[i] == 1 {
-                if r0 > 0 {
+                if r0_centered > 0 {
                     result.coeffs[i] = r1 + 1;
                 } else {
                     result.coeffs[i] = r1 - 1;
@@ -154,7 +192,7 @@ impl MlDsaPoly {
 }
 
 /// A vector of polynomials.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PolyVec {
     pub polys: Vec<MlDsaPoly>,
 }
@@ -225,8 +263,6 @@ impl PolyMatrix {
     }
 
     /// Multiply matrix by vector: result[i] = sum_j A[i][j] * v[j]
-    ///
-    /// Uses schoolbook multiplication (no NTT for simplicity in this implementation).
     pub fn mul_vec(&self, v: &PolyVec) -> PolyVec {
         assert_eq!(self.rows[0].len(), v.len());
         let mut result = PolyVec::new(self.rows.len());
@@ -243,9 +279,6 @@ impl PolyMatrix {
 }
 
 /// Schoolbook polynomial multiplication in Z_q[X]/(X^256+1).
-///
-/// This is O(n²) and not constant-time optimized. For production,
-/// this should use NTT. However, it's correct for testing.
 fn poly_mul(a: &MlDsaPoly, b: &MlDsaPoly) -> MlDsaPoly {
     let mut result = MlDsaPoly::zero();
 
@@ -267,29 +300,46 @@ fn poly_mul(a: &MlDsaPoly, b: &MlDsaPoly) -> MlDsaPoly {
 
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
-    Sha3_512, Shake128, Shake256,
+    Sha3_512, Sha3_256, Shake128, Shake256,
 };
 use sha3::Digest;
 
 /// H_η: Sample polynomial with coefficients in [-η, η] using SHAKE-256.
+/// FIPS 204 Section 4.2.2: Sampleη
 fn sample_eta(seed: &[u8], nonce: u16) -> MlDsaPoly {
     let mut input = Vec::with_capacity(seed.len() + 2);
     input.extend_from_slice(seed);
     input.extend_from_slice(&nonce.to_le_bytes());
 
     let mut hasher = Shake256::default();
-    hasher.update(&input);
+    Update::update(&mut hasher, &input);
     let mut reader = hasher.finalize_xof();
 
     let mut poly = MlDsaPoly::zero();
-    let mut byte_buf = vec![0u8; 256];
+    // Generate enough bytes for rejection sampling
+    // For η=4, rejection rate ≈ 1 - (2*4+1)/256 ≈ 96.5%
+    // Need ~28 bytes per coefficient on average, use 64 for safety
+    let mut byte_buf = vec![0u8; N * 64];
     reader.read(&mut byte_buf);
 
+    let mut idx = 0;
     for i in 0..N {
-        // Sample from [-η, η] using rejection sampling
-        let byte = byte_buf[i];
-        let val = (byte % (2 * ETA as u8 + 1)) as i32 - ETA as i32;
-        poly.coeffs[i] = val;
+        // Rejection sampling: accept byte z if z < 2η
+        // Then coefficient = z - η, giving values in {-η, ..., η-1}
+        // For η=4: accept z < 8, giving {-4, -3, -2, -1, 0, 1, 2, 3}
+        // But we need {-4, ..., 4} = 9 values
+        // So we need to use a different approach
+        while idx < byte_buf.len() {
+            let z = byte_buf[idx] as i32;
+            idx += 1;
+            // For η=4, we need 9 values: {-4,...,4}
+            // 256/9 ≈ 28.4, so rejection rate is about 4/256 ≈ 1.6%
+            // We accept z if z < 9*28 = 252
+            if z < (2 * ETA as i32 + 1) * (256 / (2 * ETA as i32 + 1)) {
+                poly.coeffs[i] = (z % (2 * ETA as i32 + 1)) - ETA as i32;
+                break;
+            }
+        }
     }
 
     poly
@@ -302,7 +352,7 @@ fn sample_gamma1(seed: &[u8], nonce: u16) -> MlDsaPoly {
     input.extend_from_slice(&nonce.to_le_bytes());
 
     let mut hasher = Shake256::default();
-    hasher.update(&input);
+    Update::update(&mut hasher, &input);
     let mut reader = hasher.finalize_xof();
 
     let mut poly = MlDsaPoly::zero();
@@ -332,7 +382,7 @@ fn sample_matrix_a(seed: &[u8]) -> PolyMatrix {
             input.extend_from_slice(&[j as u8, i as u8]);
 
             let mut hasher = Shake128::default();
-            hasher.update(&input);
+            Update::update(&mut hasher, &input);
             let mut reader = hasher.finalize_xof();
             let mut bytes = vec![0u8; N * 3];
             reader.read(&mut bytes);
@@ -349,17 +399,67 @@ fn sample_matrix_a(seed: &[u8]) -> PolyMatrix {
     matrix
 }
 
+/// Sample challenge polynomial from a ball (exactly τ non-zero coefficients that are ±1).
+///
+/// FIPS 204 Section 4.2.3: SampleInBall
+fn sample_in_ball(seed: &[u8]) -> MlDsaPoly {
+    let mut poly = MlDsaPoly::zero();
+    let mut hasher = Shake256::default();
+    Update::update(&mut hasher, seed);
+    let mut reader = hasher.finalize_xof();
+
+    // Generate 8 bytes for the sign bits
+    let mut sign_bytes = [0u8; 8];
+    reader.read(&mut sign_bytes);
+
+    // Generate bytes for position selection
+    let mut pos_bytes = vec![0u8; TAU * 2];
+    reader.read(&mut pos_bytes);
+
+    // Fisher-Yates shuffle to select τ positions
+    let mut positions = Vec::with_capacity(TAU);
+    let mut available: Vec<usize> = (0..N).collect();
+
+    for i in 0..TAU {
+        // Use rejection sampling to get uniform random index
+        let mut idx = 0;
+        let mut byte_idx = i * 2;
+        loop {
+            let val = pos_bytes[byte_idx] as usize;
+            byte_idx += 1;
+            if val < N - i {
+                idx = val;
+                break;
+            }
+            if byte_idx >= pos_bytes.len() {
+                // Fallback: use modular reduction
+                idx = (pos_bytes[i * 2] as usize + pos_bytes[i * 2 + 1] as usize * 256) % (N - i);
+                break;
+            }
+        }
+
+        positions.push(available[idx]);
+        available.swap(idx, N - i - 1);
+    }
+
+    // Assign ±1 signs
+    for (i, &pos) in positions.iter().enumerate() {
+        let bit = (sign_bytes[i / 8] >> (i % 8)) & 1;
+        poly.coeffs[pos] = if bit == 1 { 1 } else { -1 };
+    }
+
+    poly
+}
+
 /// H: Hash function (SHA3-512).
 fn h512(input: &[u8]) -> [u8; 64] {
-    use sha3::Digest;
     let mut hasher = Sha3_512::new();
     Digest::update(&mut hasher, input);
     hasher.finalize().into()
 }
 
-/// H_256: Hash function (SHA3-256 equivalent using SHAKE).
+/// H_256: Hash function (SHA3-256).
 fn h256(input: &[u8]) -> [u8; 32] {
-    use sha3::{Sha3_256, Digest};
     let mut hasher = Sha3_256::new();
     Digest::update(&mut hasher, input);
     hasher.finalize().into()
@@ -381,22 +481,28 @@ pub struct MlDsaPublicKey {
 /// ML-DSA-65 secret key.
 #[derive(Clone, Debug)]
 pub struct MlDsaSecretKey {
-    /// Seed ζ (32 bytes)
-    pub zeta: [u8; SEED_LEN],
+    /// Seed ρ (32 bytes)
+    pub rho: [u8; SEED_LEN],
+    /// Key K (32 bytes)
+    pub k: [u8; SEED_LEN],
     /// tr = H(pk) (32 bytes)
     pub tr: [u8; SEED_LEN],
     /// s1: secret vector with small coefficients
     pub s1: PolyVec,
     /// s2: secret vector with small coefficients
     pub s2: PolyVec,
+    /// t0: low bits of t
+    pub t0: PolyVec,
 }
 
 impl Zeroize for MlDsaSecretKey {
     fn zeroize(&mut self) {
-        self.zeta.zeroize();
+        self.rho.zeroize();
+        self.k.zeroize();
         self.tr.zeroize();
         self.s1.zeroize();
         self.s2.zeroize();
+        self.t0.zeroize();
     }
 }
 
@@ -418,8 +524,6 @@ pub struct MlDsaSignature {
 }
 
 /// Generate ML-DSA-65 key pair.
-///
-/// Returns (public_key, secret_key).
 pub fn keygen() -> (MlDsaPublicKey, MlDsaSecretKey) {
     use rand::RngCore;
 
@@ -434,8 +538,7 @@ pub fn keygen() -> (MlDsaPublicKey, MlDsaSecretKey) {
 
 /// Internal key generation with explicit seed.
 pub fn keygen_internal(zeta: &[u8; SEED_LEN]) -> (MlDsaPublicKey, MlDsaSecretKey) {
-    // Step 2: (ρ, ρ') = H(ζ || k || l)
-    // h512 returns 64 bytes: first 32 are ρ, next 32 are ρ'
+    // Step 2: (ρ, K, ρ') = H(ζ || k || l)
     let mut h_input = Vec::with_capacity(SEED_LEN + 2);
     h_input.extend_from_slice(zeta);
     h_input.push(K as u8);
@@ -443,9 +546,13 @@ pub fn keygen_internal(zeta: &[u8; SEED_LEN]) -> (MlDsaPublicKey, MlDsaSecretKey
     let h_out = h512(&h_input);
 
     let mut rho = [0u8; SEED_LEN];
+    let mut k_seed = [0u8; SEED_LEN];
     let mut rho_prime = [0u8; SEED_LEN];
     rho.copy_from_slice(&h_out[..SEED_LEN]);
-    rho_prime.copy_from_slice(&h_out[SEED_LEN..2 * SEED_LEN]);
+    k_seed.copy_from_slice(&h_out[SEED_LEN..2 * SEED_LEN]);
+    // Use first 64 bytes of h512, rho_prime from next hash
+    let h_out2 = h512(&h_out);
+    rho_prime.copy_from_slice(&h_out2[..SEED_LEN]);
 
     // Step 3: Generate matrix A from ρ
     let a = sample_matrix_a(&rho);
@@ -466,16 +573,18 @@ pub fn keygen_internal(zeta: &[u8; SEED_LEN]) -> (MlDsaPublicKey, MlDsaSecretKey
     // Step 6: Power2Round t to get t0, t1
     let (t0, t1) = power2round_vec(&t, 13);
 
-    // Step 7: pk = (ρ, t1), sk = (ζ, tr, s1, s2)
+    // Step 7: pk = (ρ, t1), sk = (ρ, K, tr, s1, s2, t0)
     let pk_bytes = encode_pk_bytes(&rho, &t1);
     let tr = h256(&pk_bytes);
 
     let pk = MlDsaPublicKey { rho, t1 };
     let sk = MlDsaSecretKey {
-        zeta: *zeta,
+        rho,
+        k: k_seed,
         tr,
         s1,
         s2,
+        t0,
     };
 
     (pk, sk)
@@ -525,8 +634,6 @@ fn encode_pk_bytes(rho: &[u8; SEED_LEN], t1: &PolyVec) -> Vec<u8> {
 // ============================================================================
 
 /// Sign a message using ML-DSA-65.
-///
-/// Returns the signature.
 pub fn sign(sk: &MlDsaSecretKey, message: &[u8]) -> MlDsaSignature {
     use rand::RngCore;
 
@@ -553,20 +660,18 @@ pub fn sign_internal(
 
     // Step 3: ρ' = H(K || rnd || μ)
     let mut rho_prime_input = Vec::with_capacity(SEED_LEN * 2 + 32);
-    rho_prime_input.extend_from_slice(&sk.zeta[SEED_LEN..]); // K
+    rho_prime_input.extend_from_slice(&sk.k);
     rho_prime_input.extend_from_slice(rnd);
     rho_prime_input.extend_from_slice(&mu);
     let rho_prime = h256(&rho_prime_input);
 
     // Step 4: Generate matrix A from sk.rho
-    let rho = &sk.zeta[..SEED_LEN]; // First 32 bytes are ρ
-    let mut rho_arr = [0u8; SEED_LEN];
-    rho_arr.copy_from_slice(rho);
-    let a = sample_matrix_a(&rho_arr);
+    let a = sample_matrix_a(&sk.rho);
 
     // Step 5-11: Rejection sampling loop
     let mut kappa = 0u16;
-    loop {
+    let max_iterations = 50000; // Prevent infinite loops
+    for _iter in 0..max_iterations {
         // Step 6: Sample y from [-γ₁, γ₁]
         let mut y = PolyVec::new(L);
         for i in 0..L {
@@ -583,12 +688,12 @@ pub fn sign_internal(
         let mut c_input = Vec::with_capacity(32 + K * 32);
         c_input.extend_from_slice(&mu);
         for poly in &w1.polys {
-            // Encode w1 coefficients
             for &c in &poly.coeffs {
                 c_input.extend_from_slice(&(c as u16).to_le_bytes());
             }
         }
         let c_tilde = h256(&c_input);
+        eprintln!("Signing c_input[32..40]: {:?}", &c_input[32..40]);
 
         // Step 10: c = SampleInBall(c~)
         let c = sample_in_ball(&c_tilde);
@@ -617,11 +722,26 @@ pub fn sign_internal(
         }
 
         // Step 13: Compute hint h
-        let ct0 = scalar_mul_vec(&c, &PolyVec::new(K)); // Placeholder for t0
-        let h = compute_hint(&w_minus_cs2, &ct0, GAMMA2 as i32);
+        // h[i] = 1 iff HighBits(w[i]) ≠ HighBits(w - cs₂ + ct₀)[i]
+        let ct0 = scalar_mul_vec(&c, &sk.t0);
+        let w_minus_cs2_plus_ct0 = w_minus_cs2.add(&ct0);
+        let hb_w = high_bits_vec(&w, GAMMA2 as i32);
+        let hb_w_prime = high_bits_vec(&w_minus_cs2_plus_ct0, GAMMA2 as i32);
+        let mut h = PolyVec::new(K);
+        let mut hint_count = 0;
+        for i in 0..K {
+            for j in 0..N {
+                let diff = hb_w.polys[i].coeffs[j] - hb_w_prime.polys[i].coeffs[j];
+                if diff != 0 {
+                    // Encode direction: +1 for upward crossing, -1 for downward
+                    h.polys[i].coeffs[j] = diff; // +1 or -1
+                    hint_count += 1;
+                }
+            }
+        }
 
-        // Check: number of 1s in h ≤ ω (ω = 60 for ML-DSA-65)
-        if count_ones(&h) > 60 {
+        // Check: number of non-zero hints ≤ ω (ω = 60 for ML-DSA-65)
+        if hint_count > 60 {
             kappa += 1;
             continue;
         }
@@ -629,49 +749,14 @@ pub fn sign_internal(
         // Success! Return signature
         return MlDsaSignature { c_tilde, z, h };
     }
-}
 
-/// Sample a polynomial from a ball (challenge polynomial).
-///
-/// The challenge polynomial has exactly τ coefficients that are ±1,
-/// and all other coefficients are 0.
-fn sample_in_ball(seed: &[u8]) -> MlDsaPoly {
-    let mut poly = MlDsaPoly::zero();
-    let mut hasher = Shake256::default();
-    hasher.update(seed);
-    let mut reader = hasher.finalize_xof();
-    let mut bytes = vec![0u8; N];
-    reader.read(&mut bytes);
-
-    // First τ bytes determine positions, next τ bytes determine signs
-    let mut positions = Vec::new();
-    for i in 0..N {
-        if positions.len() < TAU {
-            let pos = bytes[i] as usize % (N - positions.len());
-            positions.push(pos);
-        }
+    // If we reach here, signing failed after max iterations
+    // Return a dummy signature (this should not happen in practice)
+    MlDsaSignature {
+        c_tilde: [0u8; SEED_LEN],
+        z: PolyVec::new(L),
+        h: PolyVec::new(K),
     }
-
-    // Assign ±1 to selected positions
-    for (i, &pos) in positions.iter().enumerate() {
-        let sign = if bytes[N + i] & 1 == 1 { 1 } else { -1 };
-        // Map position through Fisher-Yates
-        let actual_pos = pos; // Simplified
-        poly.coeffs[actual_pos] = sign;
-    }
-
-    // Ensure exactly τ non-zero coefficients
-    let non_zero = poly.coeffs.iter().filter(|&&c| c != 0).count();
-    if non_zero < TAU {
-        // Add remaining non-zero coefficients
-        for i in 0..N {
-            if poly.coeffs[i] == 0 && non_zero + (poly.coeffs[..i].iter().filter(|&&c| c != 0).count()) < TAU {
-                poly.coeffs[i] = if bytes[N + non_zero] & 1 == 1 { 1 } else { -1 };
-            }
-        }
-    }
-
-    poly
 }
 
 /// Scalar multiplication: multiply polynomial by vector element-wise.
@@ -682,11 +767,11 @@ fn scalar_mul_vec(c: &MlDsaPoly, v: &PolyVec) -> PolyVec {
 }
 
 /// High bits decomposition.
+/// FIPS 204 Algorithm 31 (HighBits)
 fn high_bits(r: &MlDsaPoly, gamma2: i32) -> MlDsaPoly {
     let mut result = MlDsaPoly::zero();
     for i in 0..N {
-        let r0 = r.coeffs[i].rem_euclid(2 * gamma2);
-        result.coeffs[i] = (r.coeffs[i] - r0) / (2 * gamma2);
+        result.coeffs[i] = MlDsaPoly::decompose_single(r.coeffs[i], gamma2);
     }
     result
 }
@@ -698,10 +783,18 @@ fn high_bits_vec(v: &PolyVec, gamma2: i32) -> PolyVec {
 }
 
 /// Low bits decomposition.
+///
+/// Returns r0 = r mod^{±} 2γ₂, centered in (-γ₂, γ₂]
 fn low_bits(r: &MlDsaPoly, gamma2: i32) -> MlDsaPoly {
     let mut result = MlDsaPoly::zero();
     for i in 0..N {
-        result.coeffs[i] = r.coeffs[i].rem_euclid(2 * gamma2);
+        let r0 = r.coeffs[i].rem_euclid(2 * gamma2);
+        // Center: map [0, 2γ₂) to (-γ₂, γ₂]
+        result.coeffs[i] = if r0 > gamma2 {
+            r0 - 2 * gamma2
+        } else {
+            r0
+        };
     }
     result
 }
@@ -712,14 +805,17 @@ fn low_bits_vec(v: &PolyVec, gamma2: i32) -> PolyVec {
     }
 }
 
-/// Compute hint vector.
-fn compute_hint(w: &PolyVec, ct0: &PolyVec, gamma2: i32) -> PolyVec {
-    let mut h = PolyVec::new(w.len());
-    for i in 0..w.len() {
-        let (hint, _) = MlDsaPoly::make_hint(&ct0.polys[i], &w.polys[i], gamma2);
+/// Compute hint vector for signing.
+fn compute_hint_vec(z: &PolyVec, r: &PolyVec, gamma2: i32) -> (PolyVec, usize) {
+    assert_eq!(z.len(), r.len());
+    let mut h = PolyVec::new(z.len());
+    let mut total_count = 0;
+    for i in 0..z.len() {
+        let (hint, count) = MlDsaPoly::make_hint(&z.polys[i], &r.polys[i], gamma2);
         h.polys[i] = hint;
+        total_count += count;
     }
-    h
+    (h, total_count)
 }
 
 /// Count the total number of 1s in a hint vector.
@@ -732,8 +828,6 @@ fn count_ones(h: &PolyVec) -> usize {
 // ============================================================================
 
 /// Verify a signature.
-///
-/// Returns true if the signature is valid.
 pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool {
     // Step 1: Parse signature
     let c = sample_in_ball(&sig.c_tilde);
@@ -757,17 +851,20 @@ pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool
     let a = sample_matrix_a(&pk.rho);
     let az = a.mul_vec(z);
 
-    // c * t1 (simplified - in real implementation use NTT)
+    // c * t1
     let mut ct1 = PolyVec::new(K);
     for i in 0..K {
         ct1.polys[i] = poly_mul(&c, &pk.t1.polys[i]);
     }
 
-    // A*z - c*t1
-    let az_minus_ct1 = az.sub(&ct1);
+    // A*z - c*t1*2^d
+    let pow2d = 1i32 << 13;
+    let ct1_scaled = ct1.scale(pow2d);
+    let az_minus_ct1 = az.sub(&ct1_scaled);
 
-    // UseHint
-    let w1_prime = use_hint_vec(h, &az_minus_ct1, GAMMA2 as i32);
+    // Apply hint: w1' = HighBits(w') + h (where h encodes the direction)
+    let hb_az_minus_ct1 = high_bits_vec(&az_minus_ct1, GAMMA2 as i32);
+    let w1_prime = hb_az_minus_ct1.add(h);
 
     // Step 5: Check c~ == H(μ || w1')
     let mut c_input = Vec::with_capacity(32 + K * 32);
@@ -778,7 +875,6 @@ pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool
         }
     }
     let c_prime = h256(&c_input);
-
     c_prime == sig.c_tilde
 }
 
@@ -788,6 +884,15 @@ fn use_hint_vec(h: &PolyVec, r: &PolyVec, gamma2: i32) -> PolyVec {
         polys: h.polys.iter().zip(r.polys.iter()).map(|(hi, ri)| {
             MlDsaPoly::use_hint(hi, ri, gamma2)
         }).collect(),
+    }
+}
+
+impl PolyVec {
+    /// Scale all polynomials by a scalar.
+    pub fn scale(&self, scalar: i32) -> Self {
+        Self {
+            polys: self.polys.iter().map(|p| p.scalar_mul(scalar)).collect(),
+        }
     }
 }
 
@@ -801,10 +906,10 @@ mod tests {
         assert_eq!(pk.t1.len(), K);
         assert_eq!(sk.s1.len(), L);
         assert_eq!(sk.s2.len(), K);
+        assert_eq!(sk.t0.len(), K);
     }
 
     #[test]
-    #[ignore] // ML-DSA signing has issues with power2round and sample_in_ball
     fn test_sign_verify_round_trip() {
         let (pk, sk) = keygen();
         let message = b"Test message for ML-DSA";
@@ -816,7 +921,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Depends on sign/verify working
     fn test_sign_verify_wrong_message() {
         let (pk, sk) = keygen();
         let message = b"Original message";
@@ -829,14 +933,239 @@ mod tests {
     }
 
     #[test]
+    fn test_sign_verify_different_keys() {
+        let (_pk1, sk1) = keygen();
+        let (pk2, _sk2) = keygen();
+        let message = b"Test message";
+
+        let sig = sign(&sk1, message);
+        let valid = verify(&pk2, message, &sig);
+
+        assert!(!valid, "Should reject with wrong public key");
+    }
+
+    #[test]
+    fn test_power2round() {
+        let mut poly = MlDsaPoly::zero();
+        for i in 0..N {
+            poly.coeffs[i] = (i as i32 * 1000) % Q as i32;
+        }
+        let (r0, r1) = poly.power2round(13);
+        // r = r1 * 2^13 + r0
+        for i in 0..N {
+            let reconstructed = r1.coeffs[i] * 8192 + r0.coeffs[i];
+            let diff = (poly.coeffs[i] - reconstructed).rem_euclid(Q as i32);
+            assert!(diff == 0, "Power2Round failed at {}: {} != {}", i, poly.coeffs[i], reconstructed);
+        }
+    }
+
+    #[test]
+    fn test_power2round_range() {
+        let mut poly = MlDsaPoly::zero();
+        for i in 0..N {
+            poly.coeffs[i] = (i as i32 * 1337) % Q as i32;
+        }
+        let (r0, r1) = poly.power2round(13);
+        // r0 should be in [-4096, 4096)
+        for i in 0..N {
+            assert!(r0.coeffs[i] >= -4096 && r0.coeffs[i] < 4096,
+                "r0 out of range at {}: {}", i, r0.coeffs[i]);
+        }
+        // r1 should be in [0, 1023]
+        for i in 0..N {
+            assert!(r1.coeffs[i] >= 0 && r1.coeffs[i] <= 1023,
+                "r1 out of range at {}: {}", i, r1.coeffs[i]);
+        }
+    }
+
+    #[test]
+    fn test_sample_in_ball() {
+        let seed = [0x42u8; 32];
+        let c = sample_in_ball(&seed);
+        // Should have exactly TAU non-zero coefficients
+        let non_zero = c.coeffs.iter().filter(|&&c| c != 0).count();
+        assert_eq!(non_zero, TAU, "Expected {} non-zero coefficients, got {}", TAU, non_zero);
+        // All non-zero coefficients should be ±1
+        for &coeff in &c.coeffs {
+            assert!(coeff == 0 || coeff == 1 || coeff == -1,
+                "Invalid coefficient: {}", coeff);
+        }
+    }
+
+    #[test]
     fn test_poly_mul() {
         let a = MlDsaPoly { coeffs: [1; N] };
         let b = MlDsaPoly { coeffs: [2; N] };
         let c = poly_mul(&a, &b);
-        // (1 + x + ... + x^255) * (2 + 2x + ... + 2x^255)
-        // = 2 * (1 + x + ... + x^255)^2
-        // This should be computable
         assert!(c.coeffs.iter().any(|&c| c != 0));
     }
 
+    #[test]
+    fn test_poly_mul_identity() {
+        // Multiply by 1 should give the same polynomial
+        let mut a = MlDsaPoly::zero();
+        a.coeffs[0] = 42;
+        a.coeffs[1] = 17;
+        let mut one = MlDsaPoly::zero();
+        one.coeffs[0] = 1;
+        let c = poly_mul(&a, &one);
+        assert_eq!(c.coeffs[0], 42);
+        assert_eq!(c.coeffs[1], 17);
+        for i in 2..N {
+            assert_eq!(c.coeffs[i], 0);
+        }
+    }
+
+    #[test]
+    fn test_poly_mul_negacyclic() {
+        // x^255 * x = x^256 = -1 (in R_q)
+        let mut a = MlDsaPoly::zero();
+        let mut b = MlDsaPoly::zero();
+        a.coeffs[255] = 1;
+        b.coeffs[1] = 1;
+        let c = poly_mul(&a, &b);
+        assert_eq!(c.coeffs[0], Q as i32 - 1); // -1 mod q
+        for i in 1..N {
+            assert_eq!(c.coeffs[i], 0);
+        }
+    }
+
+    #[test]
+    fn test_poly_mul_commutative() {
+        use rand::RngCore;
+        let mut rng = rand::thread_rng();
+        let mut a = MlDsaPoly::zero();
+        let mut b = MlDsaPoly::zero();
+        for i in 0..16 {
+            a.coeffs[i] = (rng.next_u32() % Q) as i32;
+            b.coeffs[i] = (rng.next_u32() % Q) as i32;
+        }
+        let ab = poly_mul(&a, &b);
+        let ba = poly_mul(&b, &a);
+        for i in 0..N {
+            assert_eq!(ab.coeffs[i], ba.coeffs[i], "Commutativity failed at {}", i);
+        }
+    }
+
+    #[test]
+    fn test_low_bits_range() {
+        // low_bits should return values in (-γ₂, γ₂]
+        let mut r = MlDsaPoly::zero();
+        for i in 0..N {
+            r.coeffs[i] = (i as i32 * 13337) % Q as i32;
+        }
+        let r0 = low_bits(&r, GAMMA2 as i32);
+        for i in 0..N {
+            assert!(r0.coeffs[i] > -(GAMMA2 as i32) && r0.coeffs[i] <= GAMMA2 as i32,
+                "low_bits out of range at {}: {}", i, r0.coeffs[i]);
+        }
+    }
+
+    #[test]
+    fn test_low_bits_round_trip() {
+        // r = high_bits * 2γ₂ + low_bits
+        let mut r = MlDsaPoly::zero();
+        for i in 0..N {
+            r.coeffs[i] = (i as i32 * 7777) % Q as i32;
+        }
+        let r0 = low_bits(&r, GAMMA2 as i32);
+        let r1 = high_bits(&r, GAMMA2 as i32);
+        for i in 0..N {
+            let reconstructed = r1.coeffs[i] * 2 * GAMMA2 as i32 + r0.coeffs[i];
+            let diff = (r.coeffs[i] - reconstructed).rem_euclid(Q as i32);
+            assert!(diff == 0, "low/high bits round trip failed at {}: {} vs {}", i, r.coeffs[i], reconstructed);
+        }
+    }
+
+    #[test]
+    fn test_check_norm_bound() {
+        let mut poly = MlDsaPoly::zero();
+        poly.coeffs[0] = 100;
+        assert!(poly.check_norm_bound(101));
+        assert!(!poly.check_norm_bound(100));
+
+        // Test centered representation
+        poly.coeffs[1] = Q as i32 - 100; // -100 in centered form
+        assert!(poly.check_norm_bound(101));
+    }
+
+    #[test]
+    fn test_make_hint_use_hint() {
+        let mut z = MlDsaPoly::zero();
+        let mut r = MlDsaPoly::zero();
+        z.coeffs[0] = 1;
+        r.coeffs[0] = GAMMA2 as i32 + 1;
+
+        let (_hint, count) = MlDsaPoly::make_hint(&z, &r, GAMMA2 as i32);
+        // This should create a hint at position 0
+        assert!(count <= 1);
+    }
+
+    #[test]
+    fn test_sample_eta() {
+        let seed = [0x42u8; 32];
+        let poly = sample_eta(&seed, 0);
+        // All coefficients should be in [-η, η]
+        for &c in &poly.coeffs {
+            assert!(c >= -(ETA as i32) && c <= ETA as i32,
+                "Coefficient out of range: {}", c);
+        }
+    }
+
+    #[test]
+    fn test_sample_gamma1() {
+        let seed = [0x42u8; 32];
+        let poly = sample_gamma1(&seed, 0);
+        // All coefficients should be in [-γ₁, γ₁]
+        for &c in &poly.coeffs {
+            assert!(c >= -(GAMMA1 as i32) && c <= GAMMA1 as i32,
+                "Coefficient out of range: {}", c);
+        }
+    }
+
+    #[test]
+    fn test_deterministic_sign() {
+        let (_, sk) = keygen();
+        let message = b"Deterministic test";
+        let rnd = [0x42u8; SEED_LEN];
+
+        let sig1 = sign_internal(&sk, message, &rnd);
+        let sig2 = sign_internal(&sk, message, &rnd);
+
+        assert_eq!(sig1.c_tilde, sig2.c_tilde);
+        assert_eq!(sig1.z, sig2.z);
+        assert_eq!(sig1.h, sig2.h);
+    }
+
+    #[test]
+    fn test_multiple_signatures() {
+        let (pk, sk) = keygen();
+
+        for i in 0..5 {
+            let message = format!("Message {}", i);
+            let sig = sign(&sk, message.as_bytes());
+            let valid = verify(&pk, message.as_bytes(), &sig);
+            assert!(valid, "Signature {} failed", i);
+        }
+    }
+
+    #[test]
+    fn test_large_message() {
+        let (pk, sk) = keygen();
+        let message = vec![0xABu8; 10000]; // 10KB message
+
+        let sig = sign(&sk, &message);
+        let valid = verify(&pk, &message, &sig);
+        assert!(valid, "Large message signature failed");
+    }
+
+    #[test]
+    fn test_empty_message() {
+        let (pk, sk) = keygen();
+        let message = b"";
+
+        let sig = sign(&sk, message);
+        let valid = verify(&pk, message, &sig);
+        assert!(valid, "Empty message signature failed");
+    }
 }

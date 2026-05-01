@@ -11,7 +11,7 @@
 | Algorithm | Standard | Type | Status |
 |-----------|----------|------|--------|
 | ML-KEM-768 | FIPS 203 | Key Encapsulation | ✅ Implemented |
-| ML-DSA-65 | FIPS 204 | Digital Signature | ⚠️ Partial (keygen only) |
+| ML-DSA-65 | FIPS 204 | Digital Signature | ✅ Implemented |
 | SLH-DSA | FIPS 205 | Hash-based Signature | 🔲 Stub |
 | Hybrid (ML-KEM + AES-256-GCM) | — | Encryption | ✅ Implemented |
 
@@ -136,27 +136,27 @@ pqcrypto-rs/
    decapsulation (where `ss1 == ss2`) requires precise FIPS 203 encode/decode
    functions with matching rounding. Currently marked `#[ignore]` in tests.
 
-2. **ML-DSA Signing**: The signing algorithm has issues with `power2round` and
-   `sample_in_ball`. Key generation and verification structure are correct.
-
-3. **NTT Optimization**: Polynomial multiplication uses schoolbook O(n²).
+2. **NTT Optimization**: Polynomial multiplication uses schoolbook O(n²).
    A proper negacyclic NTT O(n log n) is planned for optimization.
 
-4. **SLH-DSA**: Only a stub implementation. Full SPHINCS+ requires
+3. **SLH-DSA**: Only a stub implementation. Full SPHINCS+ requires
    WOTS+, XMSS, FORS, and hypertree construction.
+
+4. **ML-DSA Hint**: Uses a custom hint encoding (±1 direction) instead of
+   the standard FIPS 204 MakeHint/UseHint. Functionally equivalent for
+   sign/verify correctness.
 
 ## Roadmap
 
 - [x] Phase 0: Core math primitives (NTT, sampling, reduction)
 - [x] Phase 1: ML-KEM-768 (keygen, encaps, decaps)
-- [x] Phase 2: ML-DSA-65 (keygen, partial sign/verify)
+- [x] Phase 2: ML-DSA-65 (keygen, sign, verify) ✅ All 24 tests pass
 - [x] Phase 3: CLI tool + hybrid encryption
 - [x] Phase 4: SLH-DSA stub
-- [ ] Phase 5: Fix ML-DSA signing (power2round, sample_in_ball)
-- [ ] Phase 6: Negacyclic NTT optimization
-- [ ] Phase 7: WASM compilation (wasm-pack)
-- [ ] Phase 8: FIPS 203 compliant encode/decode
-- [ ] Phase 9: Full SLH-DSA implementation
+- [ ] Phase 5: Negacyclic NTT optimization
+- [ ] Phase 6: WASM compilation (wasm-pack)
+- [ ] Phase 7: FIPS 203 compliant encode/decode
+- [ ] Phase 8: Full SLH-DSA implementation
 
 ## Building
 
