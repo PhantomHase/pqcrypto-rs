@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Cargo
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keys and secrets (NEVER commit these!)
+*.key
+*.pem
+*.secret
+
+# Benchmarks
+criterion/
+
+# Coverage
+lcov.info
+tarpaulin-report.html
