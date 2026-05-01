@@ -215,13 +215,13 @@ cargo bench
 |-------|-------|--------|
 | pqcrypto-core | 31 | ✅ All pass |
 | pqcrypto-kem | 17 | ✅ All pass |
-| pqcrypto-sign | 29 + 5 ignored | ✅ All pass |
+| pqcrypto-sign | 31 + 4 ignored | ✅ All pass |
 | pqcrypto-cli | 1 | ✅ Pass |
 | Doc tests | 3 | ✅ Pass |
-| **Total** | **81 passed, 0 failed, 5 ignored** | **✅ 10x verified** |
+| **Total** | **83 passed, 0 failed, 4 ignored** | **✅ 10x verified** |
 
 > Tests verified 10 times consecutively with consistent results.
-> 5 ignored tests are SLH-DSA sign/verify (requires full Merkle tree root computation).
+> 4 ignored tests are SLH-DSA sign/verify (requires consistent Merkle root computation across layers).
 
 ## Known Limitations
 
