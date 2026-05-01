@@ -1,0 +1,26 @@
+# Code owners for PQCrypto-RS
+#
+# These owners will be automatically requested for review
+# when someone opens a pull request.
+
+# Default owner for everything
+* @PhantomHase
+
+# Core crypto primitives
+/pqcrypto-core/ @PhantomHase
+
+# KEM implementation
+/pqcrypto-kem/ @PhantomHase
+
+# Signature implementation
+/pqcrypto-sign/ @PhantomHase
+
+# CLI tool
+/pqcrypto-cli/ @PhantomHase
+
+# CI/CD configuration
+/.github/ @PhantomHase
+
+# Documentation
+/docs/ @PhantomHase
+*.md @PhantomHase

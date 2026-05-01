@@ -1,0 +1,143 @@
+# Scheduled Security Audit
+#
+# Runs weekly and on-demand to check for known vulnerabilities
+# in dependencies. Critical for a cryptography library.
+
+name: Security Audit
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "**/Cargo.toml"
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run audit
+        run: cargo audit --json > audit-report.json 2>&1 || true
+
+      - name: Run audit (human readable)
+        run: cargo audit
+
+      - name: Create issue on vulnerability
+        if: failure()
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "🚨 Security vulnerability detected in dependencies"
+          content-filepath: audit-report.json
+          labels: |
+            security
+            dependencies
+          assignees: PhantomHase
+
+  # ─────────────────────────────────────────────
+  # Check for outdated dependencies
+  # ─────────────────────────────────────────────
+  outdated:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated
+
+      - name: Check outdated
+        run: cargo outdated --exit-code 1 --root-deps-only 2>&1 || true
+
+  # ─────────────────────────────────────────────
+  # License compliance check
+  # ─────────────────────────────────────────────
+  licenses:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      - name: Create deny.toml
+        run: |
+          cat > deny.toml << 'EOF'
+          [advisories]
+          vulnerability = "deny"
+          unmaintained = "warn"
+          yanked = "warn"
+          notice = "warn"
+
+          [licenses]
+          unlicensed = "deny"
+          allow = [
+              "Apache-2.0",
+              "MIT",
+              "BSD-2-Clause",
+              "BSD-3-Clause",
+              "ISC",
+              "Unicode-DFS-2016",
+              "Zlib",
+          ]
+
+          [bans]
+          multiple-versions = "warn"
+          wildcards = "allow"
+
+          [sources]
+          unknown-registry = "deny"
+          unknown-git = "deny"
+          allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+          allow-git = []
+          EOF
+
+      - name: Check licenses
+        run: cargo deny check licenses
+
+      - name: Check advisories
+        run: cargo deny check advisories || true
+
+  # ─────────────────────────────────────────────
+  # Unsafe code detection
+  # ─────────────────────────────────────────────
+  unsafe-check:
+    name: Unsafe Code Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unsafe code
+        run: |
+          echo "=== Scanning for 'unsafe' keyword ==="
+          if grep -rn "unsafe" --include="*.rs" pqcrypto-core/ pqcrypto-kem/ pqcrypto-sign/ | grep -v "forbid(unsafe" | grep -v "//.*unsafe" | grep -v "test"; then
+            echo "::warning::Found 'unsafe' keyword in source code. Review required."
+            exit 1
+          else
+            echo "✓ No unsafe code found (except in forbidden declarations)"
+          fi
+
+      - name: Verify forbid(unsafe_code)
+        run: |
+          for crate in pqcrypto-core pqcrypto-kem pqcrypto-sign pqcrypto-cli; do
+            if grep -q 'forbid(unsafe_code)' "$crate/src/lib.rs" "$crate/src/main.rs" 2>/dev/null; then
+              echo "✓ $crate: #![forbid(unsafe_code)] present"
+            else
+              echo "::error::$crate missing #![forbid(unsafe_code)]"
+              exit 1
+            fi
+          done
