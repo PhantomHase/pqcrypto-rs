@@ -12,6 +12,7 @@
 
 pub mod api;
 pub mod ml_dsa;
+pub mod slh_dsa;
 
 /// ML-DSA-65 parameters
 pub mod ml_dsa_params {

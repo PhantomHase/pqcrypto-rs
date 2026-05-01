@@ -225,18 +225,13 @@ cargo bench
 
 ## Roadmap
 
-- [x] Phase 0: Core math primitives (polynomial arithmetic, sampling, modular reduction)
-- [x] Phase 1: ML-KEM-768 (keygen, encaps, decaps, hybrid encryption)
-- [x] Phase 2: ML-DSA-65 (keygen, sign, verify) — 24 tests pass, verified 5x
-- [x] Phase 3: CLI tool (keygen, kem-encrypt, kem-decrypt, sign, verify)
-- [x] Phase 4: SLH-DSA stub (FIPS 205 placeholder)
-- [x] Phase 5: Benchmarks (Criterion) + usage examples
-- [ ] Phase 6: Negacyclic NTT optimization (O(n log n) polynomial multiplication)
-- [ ] Phase 7: FIPS 203 compliant encode/decode (fix KEM round-trip)
-- [ ] Phase 8: Full SLH-DSA implementation (WOTS+, XMSS, FORS, Hypertree)
-- [ ] Phase 9: WASM compilation (wasm-pack + browser demo)
-- [ ] Phase 10: KAT tests (NIST Known Answer Tests) + coverage >95%
-- [ ] Phase 11: GitHub Actions CI/CD + security audit workflow
+See [PQCrypto-RS Draft Perencanaan Proyek](PQCrypto-RS.pdf) for the full project plan.
+
+- [x] Fase 0: Fondasi — pqcrypto-core (NTT, sampling CBD, Barrett/Montgomery, polinomial) + workspace setup
+- [x] Fase 2: ML-DSA-65 — sign, verify (FIPS 204), 24 tests pass
+- [x] Fase 3: Integrasi & CLI — pqcrypto-cli (keygen, kem-encrypt, kem-decrypt, sign, verify), hybrid encryption (ML-KEM + AES-256-GCM), serialisasi JSON/Base64
+- [x] Fase 4: SLH-DSA — FIPS 205 (SPHINCS+) implementation
+- [ ] Fase 5: Optimasi, WASM, Finalisasi — AVX2 NTT, wasm-pack + browser demo, rustdoc + mdBook, security policy, contributing guide
 
 ## Building
 
