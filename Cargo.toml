@@ -30,7 +30,7 @@ aes = "0.8"
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
-cipher = "0.4"
+cipher = "0.5"
 generic-array = "1"
 typenum = "1"
 
