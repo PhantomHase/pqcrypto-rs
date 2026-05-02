@@ -693,7 +693,6 @@ pub fn sign_internal(
             }
         }
         let c_tilde = h256(&c_input);
-        eprintln!("Signing c_input[32..40]: {:?}", &c_input[32..40]);
 
         // Step 10: c = SampleInBall(c~)
         let c = sample_in_ball(&c_tilde);

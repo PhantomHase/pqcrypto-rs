@@ -685,42 +685,22 @@ pub fn keygen() -> (SlhDsaPublicKey, SlhDsaSecretKey) {
 
 /// Compute public key root from seeds.
 ///
-/// Computes the root of the top-level XMSS tree by evaluating all leaves
-/// and building the Merkle tree bottom-up.
+/// Computes the root of the XMSS tree at the TOP layer (layer d-1) of the
+/// hypertree. In SLH-DSA, pk_root is the root of the topmost XMSS tree.
 ///
-/// For SLH-DSA-SHA2-128s, the top-level tree has height h' = 9,
-/// so there are 2^9 = 512 leaves. Each leaf is a WOTS+ public key
-/// derived deterministically from the seeds.
+/// For fixed indices (tree_idx=0, leaf_idx=0), all intermediate layers
+/// also use tree=0, leaf=0. The pk_root is the Merkle root of the full
+/// XMSS tree at layer d-1, tree 0.
+///
+/// This root must match what ht_verify produces when it chains through
+/// all d layers of the hypertree and reconstructs the root at the final layer.
 fn compute_pk_root(sk_seed: &[u8; N], pk_seed: &[u8; N]) -> [u8; N] {
-    let num_leaves = 1usize << H_PRIME; // 512
-    let root_addr = make_addr(ADDR_TYPE_TREE);
+    let mut top_addr = make_addr(ADDR_TYPE_TREE);
+    set_layer(&mut top_addr, (D - 1) as u32);
+    // tree=0 (default from make_addr)
 
-    // Compute all leaf nodes (WOTS+ public keys)
-    let mut nodes = Vec::with_capacity(num_leaves);
-    for i in 0..num_leaves {
-        let mut leaf_addr = root_addr;
-        set_keypair(&mut leaf_addr, i as u32);
-        nodes.push(wots_pk_gen(sk_seed, pk_seed, &leaf_addr));
-    }
-
-    // Build Merkle tree bottom-up
-    let mut height = 1u32;
-    while nodes.len() > 1 {
-        let mut new_nodes = Vec::new();
-        for i in (0..nodes.len()).step_by(2) {
-            let mut node_addr = root_addr;
-            set_tree_height(&mut node_addr, height);
-            set_tree_index(&mut node_addr, (i / 2) as u32);
-
-            let left = nodes[i];
-            let right = if i + 1 < nodes.len() { nodes[i + 1] } else { nodes[i] };
-            new_nodes.push(h_node(pk_seed, &node_addr, &left, &right));
-        }
-        nodes = new_nodes;
-        height += 1;
-    }
-
-    nodes[0]
+    let (root, _) = xmss_node(sk_seed, 0, H_PRIME as u32, pk_seed, &top_addr);
+    root
 }
 
 /// Sign a message.
@@ -802,10 +782,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // SLH-DSA: ht_verify root differs from compute_pk_root.
-              // Root cause: xmss_verify uses per-layer addresses while
-              // compute_pk_root uses flat tree evaluation. Requires consistent
-              // address derivation across all layers. Known limitation.
     fn test_sign_verify_round_trip() {
         let (pk, sk) = keygen();
         let message = b"Test SLH-DSA message";
@@ -816,7 +792,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Depends on sign/verify working
     fn test_sign_verify_wrong_message() {
         let (pk, sk) = keygen();
         let message = b"Original message";
@@ -828,7 +803,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Depends on sign/verify working
     fn test_sign_verify_wrong_key() {
         let (pk1, sk1) = keygen();
         let (pk2, _sk2) = keygen();
@@ -894,12 +868,16 @@ mod tests {
         let sk_seed = [0x42u8; N];
         let pk_seed = [0x24u8; N];
 
-        // compute_pk_root should match xmss_node root for idx=0
+        // compute_pk_root should match xmss_node root at the TOP layer (D-1)
         let pk_root = compute_pk_root(&sk_seed, &pk_seed);
-        let root_addr = make_addr(ADDR_TYPE_TREE);
-        let (node_root, _) = xmss_node(&sk_seed, 0, H_PRIME as u32, &pk_seed, &root_addr);
+        let mut top_addr = make_addr(ADDR_TYPE_TREE);
+        set_layer(&mut top_addr, (D - 1) as u32);
+        let (node_root, _) = xmss_node(&sk_seed, 0, H_PRIME as u32, &pk_seed, &top_addr);
 
-        assert_eq!(pk_root, node_root, "compute_pk_root and xmss_node should produce same root");
+        assert_eq!(
+            pk_root, node_root,
+            "compute_pk_root and xmss_node at top layer should produce same root"
+        );
     }
 
     #[test]
@@ -926,7 +904,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Depends on sign/verify working
     fn test_multiple_signatures() {
         let (pk, sk) = keygen();
 
