@@ -247,7 +247,6 @@ cargo bench
 
 ## Roadmap
 
-See [PQCrypto-RS Project Plan](PQCrypto-RS.pdf) for the full project plan.
 
 - [x] Phase 1: Foundation — pqcrypto-core (NTT, CBD sampling, Barrett/Montgomery reduction, polynomial operations) + Cargo workspace setup
 - [x] Phase 2: ML-DSA-65 — sign, verify (FIPS 204), 24 tests pass, constant-time operations
