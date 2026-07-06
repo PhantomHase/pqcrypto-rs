@@ -8,13 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- FIPS 203 ML-KEM NTT implementation with inverse transform and NTT-domain base multiplication.
+- SLH-DSA message-derived tree and leaf indices for stateless signing.
 
 ### Changed
-- Nothing yet
+- ML-DSA `sample_eta` now uses centered binomial bit sampling.
+- ML-DSA hint generation and verification now use FIPS 204-style boolean `MakeHint`/`UseHint`.
 
 ### Fixed
-- Nothing yet
+- Replaced fixed SLH-DSA hypertree indices with indices derived from `H_msg`.
 
 ## [0.1.0] - 2026-05-01
 

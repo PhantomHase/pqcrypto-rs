@@ -42,10 +42,9 @@ This is a **cryptographic library**. Security is paramount.
 
 ### Known Limitations
 
-- Polynomial multiplication uses schoolbook O(n²) — negacyclic NTT planned for optimization
-- KEM round-trip has lossy compression precision issues (marked `#[ignore]` in tests)
-- SLH-DSA is a stub implementation only
-- ML-DSA uses a custom hint encoding (±1 direction) instead of standard FIPS 204 MakeHint/UseHint
+- No third-party cryptographic audit or official NIST KAT validation has been completed
+- Constant-time behavior has not been formally verified across all arithmetic paths
+- SLH-DSA signing recomputes FORS/XMSS authentication paths and is slow
 
 ### What we consider a vulnerability
 

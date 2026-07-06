@@ -48,7 +48,8 @@ impl MlDsaPoly {
     pub fn add(&self, rhs: &Self) -> Self {
         let mut result = Self::zero();
         for i in 0..N {
-            result.coeffs[i] = ((self.coeffs[i] as i64 + rhs.coeffs[i] as i64) % Q as i64) as i32;
+            result.coeffs[i] =
+                (self.coeffs[i] as i64 + rhs.coeffs[i] as i64).rem_euclid(Q as i64) as i32;
         }
         result
     }
@@ -57,8 +58,8 @@ impl MlDsaPoly {
     pub fn sub(&self, rhs: &Self) -> Self {
         let mut result = Self::zero();
         for i in 0..N {
-            let diff = (self.coeffs[i] as i64 - rhs.coeffs[i] as i64 + Q as i64) % Q as i64;
-            result.coeffs[i] = diff as i32;
+            result.coeffs[i] =
+                (self.coeffs[i] as i64 - rhs.coeffs[i] as i64).rem_euclid(Q as i64) as i32;
         }
         result
     }
@@ -67,7 +68,8 @@ impl MlDsaPoly {
     pub fn scalar_mul(&self, scalar: i32) -> Self {
         let mut result = Self::zero();
         for i in 0..N {
-            result.coeffs[i] = ((self.coeffs[i] as i64 * scalar as i64).rem_euclid(Q as i64)) as i32;
+            result.coeffs[i] =
+                ((self.coeffs[i] as i64 * scalar as i64).rem_euclid(Q as i64)) as i32;
         }
         result
     }
@@ -142,14 +144,22 @@ impl MlDsaPoly {
     /// Helper: compute high bits of r with respect to γ₂.
     /// This is the "decompose" function from FIPS 204.
     /// Input r is in [0, q). Returns r1 such that r = r1 * 2γ₂ + r0.
+    fn decompose_coeff(r: i32, gamma2: i32) -> (i32, i32) {
+        let r_plus = r.rem_euclid(Q as i32);
+        let alpha = 2 * gamma2;
+        let r0 = r_plus.rem_euclid(alpha);
+        let mut r0_centered = if r0 > gamma2 { r0 - alpha } else { r0 };
+
+        if r_plus - r0_centered == Q as i32 - 1 {
+            r0_centered -= 1;
+            (0, r0_centered)
+        } else {
+            ((r_plus - r0_centered) / alpha, r0_centered)
+        }
+    }
+
     fn decompose_single(r: i32, gamma2: i32) -> i32 {
-        // Reduce r to [0, q) first
-        let r_mod = r.rem_euclid(Q as i32);
-        // Compute r0 = r mod± 2γ₂ in (-γ₂, γ₂]
-        let r0 = r_mod.rem_euclid(2 * gamma2);
-        let r0_centered = if r0 > gamma2 { r0 - 2 * gamma2 } else { r0 };
-        // r1 = (r - r0) / 2γ₂
-        (r_mod - r0_centered) / (2 * gamma2)
+        Self::decompose_coeff(r, gamma2).0
     }
 
     /// UseHint: apply hint to adjust rounding.
@@ -157,18 +167,16 @@ impl MlDsaPoly {
     /// The adjustment direction: if r₀ > 0, the "other" high bits is r₁+1 (crossing upward).
     pub fn use_hint(hint: &Self, r: &Self, gamma2: i32) -> Self {
         let mut result = Self::zero();
+        let m = (Q as i32 - 1) / (2 * gamma2);
 
         for i in 0..N {
-            let r_mod = r.coeffs[i].rem_euclid(Q as i32);
-            let r0 = r_mod.rem_euclid(2 * gamma2);
-            let r0_centered = if r0 > gamma2 { r0 - 2 * gamma2 } else { r0 };
-            let r1 = (r_mod - r0_centered) / (2 * gamma2);
+            let (r1, r0) = Self::decompose_coeff(r.coeffs[i], gamma2);
 
             if hint.coeffs[i] == 1 {
-                if r0_centered > 0 {
-                    result.coeffs[i] = r1 + 1;
+                if r0 > 0 {
+                    result.coeffs[i] = (r1 + 1).rem_euclid(m);
                 } else {
-                    result.coeffs[i] = r1 - 1;
+                    result.coeffs[i] = (r1 - 1).rem_euclid(m);
                 }
             } else {
                 result.coeffs[i] = r1;
@@ -224,7 +232,12 @@ impl PolyVec {
     pub fn add(&self, rhs: &Self) -> Self {
         assert_eq!(self.len(), rhs.len());
         Self {
-            polys: self.polys.iter().zip(rhs.polys.iter()).map(|(a, b)| a.add(b)).collect(),
+            polys: self
+                .polys
+                .iter()
+                .zip(rhs.polys.iter())
+                .map(|(a, b)| a.add(b))
+                .collect(),
         }
     }
 
@@ -232,7 +245,12 @@ impl PolyVec {
     pub fn sub(&self, rhs: &Self) -> Self {
         assert_eq!(self.len(), rhs.len());
         Self {
-            polys: self.polys.iter().zip(rhs.polys.iter()).map(|(a, b)| a.sub(b)).collect(),
+            polys: self
+                .polys
+                .iter()
+                .zip(rhs.polys.iter())
+                .map(|(a, b)| a.sub(b))
+                .collect(),
         }
     }
 
@@ -298,11 +316,11 @@ fn poly_mul(a: &MlDsaPoly, b: &MlDsaPoly) -> MlDsaPoly {
 // ML-DSA Hash Functions
 // ============================================================================
 
+use sha3::Digest;
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
-    Sha3_512, Sha3_256, Shake128, Shake256,
+    Sha3_256, Sha3_512, Shake128, Shake256,
 };
-use sha3::Digest;
 
 /// H_η: Sample polynomial with coefficients in [-η, η] using SHAKE-256.
 /// FIPS 204 Section 4.2.2: Sampleη
@@ -316,34 +334,35 @@ fn sample_eta(seed: &[u8], nonce: u16) -> MlDsaPoly {
     let mut reader = hasher.finalize_xof();
 
     let mut poly = MlDsaPoly::zero();
-    // Generate enough bytes for rejection sampling
-    // For η=4, rejection rate ≈ 1 - (2*4+1)/256 ≈ 96.5%
-    // Need ~28 bytes per coefficient on average, use 64 for safety
-    let mut byte_buf = vec![0u8; N * 64];
-    reader.read(&mut byte_buf);
+    let mut ctr = 0;
+    let mut buf = [0u8; 256];
 
-    let mut idx = 0;
-    for i in 0..N {
-        // Rejection sampling: accept byte z if z < 2η
-        // Then coefficient = z - η, giving values in {-η, ..., η-1}
-        // For η=4: accept z < 8, giving {-4, -3, -2, -1, 0, 1, 2, 3}
-        // But we need {-4, ..., 4} = 9 values
-        // So we need to use a different approach
-        while idx < byte_buf.len() {
-            let z = byte_buf[idx] as i32;
-            idx += 1;
-            // For η=4, we need 9 values: {-4,...,4}
-            // 256/9 ≈ 28.4, so rejection rate is about 4/256 ≈ 1.6%
-            // We accept z if z < 9*28 = 252
-            if z < (2 * ETA as i32 + 1) * (256 / (2 * ETA as i32 + 1)) {
-                poly.coeffs[i] = (z % (2 * ETA as i32 + 1)) - ETA as i32;
-                break;
+    while ctr < N {
+        reader.read(&mut buf);
+        for &byte in &buf {
+            let t0 = (byte & 0x0F) as i32;
+            let t1 = (byte >> 4) as i32;
+
+            if t0 < 9 {
+                poly.coeffs[ctr] = 4 - t0;
+                ctr += 1;
+                if ctr == N {
+                    break;
+                }
+            }
+            if t1 < 9 {
+                poly.coeffs[ctr] = 4 - t1;
+                ctr += 1;
+                if ctr == N {
+                    break;
+                }
             }
         }
     }
 
     poly
 }
+
 
 /// Sample polynomial in [-γ₁, γ₁] using SHAKE-256.
 fn sample_gamma1(seed: &[u8], nonce: u16) -> MlDsaPoly {
@@ -647,11 +666,7 @@ pub fn sign(sk: &MlDsaSecretKey, message: &[u8]) -> MlDsaSignature {
 }
 
 /// Internal signing with explicit randomness.
-pub fn sign_internal(
-    sk: &MlDsaSecretKey,
-    message: &[u8],
-    rnd: &[u8; SEED_LEN],
-) -> MlDsaSignature {
+pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) -> MlDsaSignature {
     // Step 2: μ = H(tr || M)
     let mut mu_input = Vec::with_capacity(SEED_LEN + message.len());
     mu_input.extend_from_slice(&sk.tr);
@@ -724,20 +739,8 @@ pub fn sign_internal(
         // h[i] = 1 iff HighBits(w[i]) ≠ HighBits(w - cs₂ + ct₀)[i]
         let ct0 = scalar_mul_vec(&c, &sk.t0);
         let w_minus_cs2_plus_ct0 = w_minus_cs2.add(&ct0);
-        let hb_w = high_bits_vec(&w, GAMMA2 as i32);
-        let hb_w_prime = high_bits_vec(&w_minus_cs2_plus_ct0, GAMMA2 as i32);
-        let mut h = PolyVec::new(K);
-        let mut hint_count = 0;
-        for i in 0..K {
-            for j in 0..N {
-                let diff = hb_w.polys[i].coeffs[j] - hb_w_prime.polys[i].coeffs[j];
-                if diff != 0 {
-                    // Encode direction: +1 for upward crossing, -1 for downward
-                    h.polys[i].coeffs[j] = diff; // +1 or -1
-                    hint_count += 1;
-                }
-            }
-        }
+        let neg_ct0 = ct0.scale(-1);
+        let (h, hint_count) = compute_hint_vec(&neg_ct0, &w_minus_cs2_plus_ct0, GAMMA2 as i32);
 
         // Check: number of non-zero hints ≤ ω (ω = 60 for ML-DSA-65)
         if hint_count > 60 {
@@ -787,13 +790,9 @@ fn high_bits_vec(v: &PolyVec, gamma2: i32) -> PolyVec {
 fn low_bits(r: &MlDsaPoly, gamma2: i32) -> MlDsaPoly {
     let mut result = MlDsaPoly::zero();
     for i in 0..N {
-        let r0 = r.coeffs[i].rem_euclid(2 * gamma2);
+        let r0 = MlDsaPoly::decompose_coeff(r.coeffs[i], gamma2).1;
         // Center: map [0, 2γ₂) to (-γ₂, γ₂]
-        result.coeffs[i] = if r0 > gamma2 {
-            r0 - 2 * gamma2
-        } else {
-            r0
-        };
+        result.coeffs[i] = if r0 > gamma2 { r0 - 2 * gamma2 } else { r0 };
     }
     result
 }
@@ -819,7 +818,16 @@ fn compute_hint_vec(z: &PolyVec, r: &PolyVec, gamma2: i32) -> (PolyVec, usize) {
 
 /// Count the total number of 1s in a hint vector.
 fn count_ones(h: &PolyVec) -> usize {
-    h.polys.iter().map(|p| p.coeffs.iter().filter(|&&c| c == 1).count()).sum()
+    h.polys
+        .iter()
+        .map(|p| p.coeffs.iter().filter(|&&c| c == 1).count())
+        .sum()
+}
+
+fn hint_is_valid(h: &PolyVec) -> bool {
+    h.polys
+        .iter()
+        .all(|p| p.coeffs.iter().all(|&c| c == 0 || c == 1))
 }
 
 // ============================================================================
@@ -835,6 +843,9 @@ pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool
 
     // Step 2: Check norm bound
     if !z.check_norm_bound((GAMMA1 - BETA) as i32) {
+        return false;
+    }
+    if !hint_is_valid(h) || count_ones(h) > 60 {
         return false;
     }
 
@@ -861,9 +872,7 @@ pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool
     let ct1_scaled = ct1.scale(pow2d);
     let az_minus_ct1 = az.sub(&ct1_scaled);
 
-    // Apply hint: w1' = HighBits(w') + h (where h encodes the direction)
-    let hb_az_minus_ct1 = high_bits_vec(&az_minus_ct1, GAMMA2 as i32);
-    let w1_prime = hb_az_minus_ct1.add(h);
+    let w1_prime = use_hint_vec(h, &az_minus_ct1, GAMMA2 as i32);
 
     // Step 5: Check c~ == H(μ || w1')
     let mut c_input = Vec::with_capacity(32 + K * 32);
@@ -880,9 +889,12 @@ pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool
 fn use_hint_vec(h: &PolyVec, r: &PolyVec, gamma2: i32) -> PolyVec {
     assert_eq!(h.len(), r.len());
     PolyVec {
-        polys: h.polys.iter().zip(r.polys.iter()).map(|(hi, ri)| {
-            MlDsaPoly::use_hint(hi, ri, gamma2)
-        }).collect(),
+        polys: h
+            .polys
+            .iter()
+            .zip(r.polys.iter())
+            .map(|(hi, ri)| MlDsaPoly::use_hint(hi, ri, gamma2))
+            .collect(),
     }
 }
 
@@ -954,7 +966,13 @@ mod tests {
         for i in 0..N {
             let reconstructed = r1.coeffs[i] * 8192 + r0.coeffs[i];
             let diff = (poly.coeffs[i] - reconstructed).rem_euclid(Q as i32);
-            assert!(diff == 0, "Power2Round failed at {}: {} != {}", i, poly.coeffs[i], reconstructed);
+            assert!(
+                diff == 0,
+                "Power2Round failed at {}: {} != {}",
+                i,
+                poly.coeffs[i],
+                reconstructed
+            );
         }
     }
 
@@ -967,13 +985,21 @@ mod tests {
         let (r0, r1) = poly.power2round(13);
         // r0 should be in [-4096, 4096)
         for i in 0..N {
-            assert!(r0.coeffs[i] >= -4096 && r0.coeffs[i] < 4096,
-                "r0 out of range at {}: {}", i, r0.coeffs[i]);
+            assert!(
+                r0.coeffs[i] >= -4096 && r0.coeffs[i] < 4096,
+                "r0 out of range at {}: {}",
+                i,
+                r0.coeffs[i]
+            );
         }
         // r1 should be in [0, 1023]
         for i in 0..N {
-            assert!(r1.coeffs[i] >= 0 && r1.coeffs[i] <= 1023,
-                "r1 out of range at {}: {}", i, r1.coeffs[i]);
+            assert!(
+                r1.coeffs[i] >= 0 && r1.coeffs[i] <= 1023,
+                "r1 out of range at {}: {}",
+                i,
+                r1.coeffs[i]
+            );
         }
     }
 
@@ -983,11 +1009,18 @@ mod tests {
         let c = sample_in_ball(&seed);
         // Should have exactly TAU non-zero coefficients
         let non_zero = c.coeffs.iter().filter(|&&c| c != 0).count();
-        assert_eq!(non_zero, TAU, "Expected {} non-zero coefficients, got {}", TAU, non_zero);
+        assert_eq!(
+            non_zero, TAU,
+            "Expected {} non-zero coefficients, got {}",
+            TAU, non_zero
+        );
         // All non-zero coefficients should be ±1
         for &coeff in &c.coeffs {
-            assert!(coeff == 0 || coeff == 1 || coeff == -1,
-                "Invalid coefficient: {}", coeff);
+            assert!(
+                coeff == 0 || coeff == 1 || coeff == -1,
+                "Invalid coefficient: {}",
+                coeff
+            );
         }
     }
 
@@ -1055,8 +1088,12 @@ mod tests {
         }
         let r0 = low_bits(&r, GAMMA2 as i32);
         for i in 0..N {
-            assert!(r0.coeffs[i] > -(GAMMA2 as i32) && r0.coeffs[i] <= GAMMA2 as i32,
-                "low_bits out of range at {}: {}", i, r0.coeffs[i]);
+            assert!(
+                r0.coeffs[i] > -(GAMMA2 as i32) && r0.coeffs[i] <= GAMMA2 as i32,
+                "low_bits out of range at {}: {}",
+                i,
+                r0.coeffs[i]
+            );
         }
     }
 
@@ -1072,7 +1109,13 @@ mod tests {
         for i in 0..N {
             let reconstructed = r1.coeffs[i] * 2 * GAMMA2 as i32 + r0.coeffs[i];
             let diff = (r.coeffs[i] - reconstructed).rem_euclid(Q as i32);
-            assert!(diff == 0, "low/high bits round trip failed at {}: {} vs {}", i, r.coeffs[i], reconstructed);
+            assert!(
+                diff == 0,
+                "low/high bits round trip failed at {}: {} vs {}",
+                i,
+                r.coeffs[i],
+                reconstructed
+            );
         }
     }
 
@@ -1106,8 +1149,11 @@ mod tests {
         let poly = sample_eta(&seed, 0);
         // All coefficients should be in [-η, η]
         for &c in &poly.coeffs {
-            assert!(c >= -(ETA as i32) && c <= ETA as i32,
-                "Coefficient out of range: {}", c);
+            assert!(
+                c >= -(ETA as i32) && c <= ETA as i32,
+                "Coefficient out of range: {}",
+                c
+            );
         }
     }
 
@@ -1117,8 +1163,11 @@ mod tests {
         let poly = sample_gamma1(&seed, 0);
         // All coefficients should be in [-γ₁, γ₁]
         for &c in &poly.coeffs {
-            assert!(c >= -(GAMMA1 as i32) && c <= GAMMA1 as i32,
-                "Coefficient out of range: {}", c);
+            assert!(
+                c >= -(GAMMA1 as i32) && c <= GAMMA1 as i32,
+                "Coefficient out of range: {}",
+                c
+            );
         }
     }
 

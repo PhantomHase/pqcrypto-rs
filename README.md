@@ -129,7 +129,7 @@ pqcrypto-rs/
 │   └── src/
 │       ├── lib.rs          # Module declarations
 │       ├── poly.rs         # Polynomial ops in Z_q[X]/(X^256+1)
-│       ├── ntt.rs          # Polynomial multiplication (schoolbook O(n²))
+│       ├── ntt.rs          # ML-KEM NTT and polynomial multiplication
 │       ├── sampling.rs     # Centered Binomial Distribution (CBD) sampling
 │       ├── reduce.rs       # Barrett & Montgomery modular reduction
 │       └── sym.rs          # SHAKE-128, SHA3-256, SHA3-512, HKDF
@@ -144,7 +144,7 @@ pqcrypto-rs/
 │   └── src/
 │       ├── lib.rs          # Constants, error types
 │       ├── ml_dsa.rs       # ML-DSA (Dilithium) — keygen, sign, verify
-│       ├── slh_dsa.rs      # SLH-DSA (SPHINCS+) stub
+│       ├── slh_dsa.rs      # SLH-DSA (SPHINCS+)
 │       └── api.rs          # Public API
 ├── pqcrypto-cli/           # CLI tool
 │   ├── src/main.rs
@@ -237,13 +237,11 @@ cargo bench
 
 ## Known Limitations
 
-1. **NTT Optimization**: Polynomial multiplication uses schoolbook O(n²) algorithm. A proper negacyclic NTT O(n log n) is planned for a future optimization pass.
+1. **Validation**: This implementation has not been validated against official NIST KATs or third-party cryptographic audits.
 
-2. **SLH-DSA Fixed Indices**: Current SLH-DSA signing uses fixed tree_idx=0 and leaf_idx=0. A production implementation should derive indices from the message hash for stateless operation. The WOTS+ one-time signature is reused across multiple signatures with the same key.
+2. **Side-channel hardening**: Constant-time behavior has not been formally verified across all arithmetic paths.
 
-3. **ML-DSA Hint**: Uses a custom ±1 direction encoding for the hint mechanism instead of the standard FIPS 204 MakeHint/UseHint. Functionally equivalent for sign/verify correctness.
-
-4. **ML-DSA sample_eta**: Uses rejection sampling from uniform bytes instead of Centered Binomial Distribution (CBD) as specified in FIPS 204. This produces uniform distribution over {-η,...,η} instead of the specified binomial distribution.
+3. **SLH-DSA performance**: SLH-DSA signing recomputes FORS/XMSS authentication paths and is intentionally slow in this educational implementation.
 
 ## Roadmap
 
@@ -251,7 +249,7 @@ cargo bench
 - [x] Phase 2: ML-DSA-65 — sign, verify (FIPS 204), 24 tests pass, constant-time operations
 - [x] Phase 3: Integration & CLI — pqcrypto-cli (keygen, kem-encrypt, kem-decrypt, sign, verify), hybrid encryption (ML-KEM + AES-256-GCM), JSON/Base64 serialization
 - [x] Phase 4: SLH-DSA — FIPS 205 (SPHINCS+) with WOTS+, XMSS, FORS, Hypertree — sign/verify fully working, 10x verified
-- [ ] Phase 5: Optimization, WASM, Finalization — NTT optimization, wasm-pack + browser demo, rustdoc + mdBook, security policy, contributing guide
+- [ ] Phase 5: WASM, Finalization — wasm-pack + browser demo, rustdoc + mdBook, additional validation, contributing guide
 
 ## Building
 

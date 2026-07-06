@@ -48,6 +48,9 @@ const A: usize = 12;
 /// Number of FORS leaves per tree
 const K: usize = 14;
 
+/// Bytes needed for the FORS message indices: A trees * K bits.
+const FORS_MSG_BYTES: usize = (A * K + 7) / 8;
+
 /// Winternitz parameter
 const W: usize = 16;
 
@@ -76,6 +79,12 @@ fn h_sha256(data: &[u8]) -> [u8; N] {
     out
 }
 
+fn sha256_full(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}
+
 /// PRF: Pseudorandom function
 /// PRF(seed, addr) = SHA-256(seed || addr)[..n]
 fn prf(seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> [u8; N] {
@@ -95,15 +104,38 @@ fn prf_msg(prf_key: &[u8; N], r: &[u8; N], msg: &[u8]) -> [u8; N] {
     h_sha256(&data)
 }
 
-/// H_msg: Message hash
-/// H_msg(R, PK.seed, PK.root, M) = SHA-256(R || PK.seed || PK.root || M)[..n]
-fn h_msg(r: &[u8; N], pk_seed: &[u8; N], pk_root: &[u8; N], msg: &[u8]) -> [u8; N] {
+struct MessageDigest {
+    fors_msg: [u8; FORS_MSG_BYTES],
+    tree_idx: u64,
+    leaf_idx: u32,
+}
+
+/// H_msg: derive FORS digest plus hypertree indices from R, public key, and message.
+fn h_msg(r: &[u8; N], pk_seed: &[u8; N], pk_root: &[u8; N], msg: &[u8]) -> MessageDigest {
     let mut data = Vec::with_capacity(3 * N + msg.len());
     data.extend_from_slice(r);
     data.extend_from_slice(pk_seed);
     data.extend_from_slice(pk_root);
     data.extend_from_slice(msg);
-    h_sha256(&data)
+    let digest = sha256_full(&data);
+
+    let mut fors_msg = [0u8; FORS_MSG_BYTES];
+    fors_msg.copy_from_slice(&digest[..FORS_MSG_BYTES]);
+
+    let mut tree_bytes = [0u8; 8];
+    tree_bytes.copy_from_slice(&digest[FORS_MSG_BYTES..FORS_MSG_BYTES + 8]);
+    let tree_mask = (1u64 << (H - H_PRIME)) - 1;
+    let tree_idx = u64::from_be_bytes(tree_bytes) & tree_mask;
+
+    let leaf_offset = FORS_MSG_BYTES + 8;
+    let leaf_raw = u16::from_be_bytes([digest[leaf_offset], digest[leaf_offset + 1]]);
+    let leaf_idx = (leaf_raw as u32) & ((1u32 << H_PRIME) - 1);
+
+    MessageDigest {
+        fors_msg,
+        tree_idx,
+        leaf_idx,
+    }
 }
 
 /// T_l: L-tree hash (for XMSS)
@@ -127,7 +159,13 @@ fn h_node(seed: &[u8; N], addr: &[u8; ADDR_SIZE], left: &[u8; N], right: &[u8; N
 
 /// F: Chain function for WOTS+
 /// Applies the chain function `steps` times starting from chain index `start`.
-fn chain_func(seed: &[u8; N], addr: &[u8; ADDR_SIZE], data: &[u8; N], start: usize, steps: usize) -> [u8; N] {
+fn chain_func(
+    seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+    data: &[u8; N],
+    start: usize,
+    steps: usize,
+) -> [u8; N] {
     let mut result = *data;
     let mut addr_copy = *addr;
     for i in start..start + steps {
@@ -225,7 +263,12 @@ fn wots_pk_gen(seed: &[u8; N], pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> [u8
 }
 
 /// WOTS+ sign
-fn wots_sign(msg: &[u8; N], seed: &[u8; N], pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> [[u8; N]; LEN] {
+fn wots_sign(
+    msg: &[u8; N],
+    seed: &[u8; N],
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> [[u8; N]; LEN] {
     let sk = wots_sk_gen(seed, addr);
     let csum = compute_checksum(msg);
     let msg_csum = concat_msg_csum(msg, csum);
@@ -242,7 +285,12 @@ fn wots_sign(msg: &[u8; N], seed: &[u8; N], pk_seed: &[u8; N], addr: &[u8; ADDR_
 }
 
 /// WOTS+ verify
-fn wots_verify(msg: &[u8; N], sig: &[[u8; N]; LEN], pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> [u8; N] {
+fn wots_verify(
+    msg: &[u8; N],
+    sig: &[[u8; N]; LEN],
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> [u8; N] {
     let csum = compute_checksum(msg);
     let msg_csum = concat_msg_csum(msg, csum);
 
@@ -312,7 +360,13 @@ fn l_tree(pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE], pk: &[[u8; N]; LEN]) -> [u8
 // ============================================================================
 
 /// XMSS node computation
-fn xmss_node(sk_seed: &[u8; N], idx: u32, height: u32, pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> ([u8; N], Vec<[u8; N]>) {
+fn xmss_node(
+    sk_seed: &[u8; N],
+    idx: u32,
+    height: u32,
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> ([u8; N], Vec<[u8; N]>) {
     let mut auth_path = Vec::new();
 
     if height == 0 {
@@ -343,21 +397,50 @@ fn xmss_node(sk_seed: &[u8; N], idx: u32, height: u32, pk_seed: &[u8; N], addr: 
     (node, auth_path)
 }
 
+fn xmss_auth_path(
+    sk_seed: &[u8; N],
+    leaf_idx: u32,
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> Vec<[u8; N]> {
+    let mut auth_path = Vec::with_capacity(H_PRIME);
+
+    for height in 0..H_PRIME {
+        let sibling_idx = (leaf_idx >> height) ^ 1;
+        let (sibling, _) = xmss_node(sk_seed, sibling_idx, height as u32, pk_seed, addr);
+        auth_path.push(sibling);
+    }
+
+    auth_path
+}
+
 /// XMSS sign
-fn xmss_sign(msg: &[u8; N], sk_seed: &[u8; N], idx: u32, pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> (Vec<[u8; N]>, [[u8; N]; LEN]) {
+fn xmss_sign(
+    msg: &[u8; N],
+    sk_seed: &[u8; N],
+    idx: u32,
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> (Vec<[u8; N]>, [[u8; N]; LEN]) {
     // Get WOTS+ signature
     let mut wots_addr = *addr;
     set_keypair(&mut wots_addr, idx);
     let wots_sig = wots_sign(msg, sk_seed, pk_seed, &wots_addr);
 
     // Get authentication path
-    let (_, auth_path) = xmss_node(sk_seed, idx, H_PRIME as u32, pk_seed, addr);
+    let auth_path = xmss_auth_path(sk_seed, idx, pk_seed, addr);
 
     (auth_path, wots_sig)
 }
 
 /// XMSS verify
-fn xmss_verify(msg: &[u8; N], sig: &([[u8; N]; LEN], &Vec<[u8; N]>), pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE], idx: u32) -> [u8; N] {
+fn xmss_verify(
+    msg: &[u8; N],
+    sig: &([[u8; N]; LEN], &Vec<[u8; N]>),
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+    idx: u32,
+) -> [u8; N] {
     let (wots_sig, auth_path) = sig;
 
     // Verify WOTS+ signature to get leaf
@@ -397,7 +480,14 @@ fn fors_sk_gen(seed: &[u8; N], addr: &[u8; ADDR_SIZE], idx: u32, tree_idx: u32) 
 }
 
 /// FORS node computation
-fn fors_node(sk_seed: &[u8; N], idx: u32, height: u32, pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE], tree_idx: u32) -> [u8; N] {
+fn fors_node(
+    sk_seed: &[u8; N],
+    idx: u32,
+    height: u32,
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+    tree_idx: u32,
+) -> [u8; N] {
     if height == 0 {
         return fors_sk_gen(sk_seed, addr, idx, tree_idx);
     }
@@ -410,8 +500,37 @@ fn fors_node(sk_seed: &[u8; N], idx: u32, height: u32, pk_seed: &[u8; N], addr: 
     h_node(pk_seed, &node_addr, &left, &right)
 }
 
+fn fors_auth_path(
+    sk_seed: &[u8; N],
+    leaf_idx: u32,
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+    tree_idx: u32,
+) -> Vec<[u8; N]> {
+    let mut auth_path = Vec::with_capacity(K);
+
+    for height in 0..K {
+        let sibling_idx = (leaf_idx >> height) ^ 1;
+        auth_path.push(fors_node(
+            sk_seed,
+            sibling_idx,
+            height as u32,
+            pk_seed,
+            addr,
+            tree_idx,
+        ));
+    }
+
+    auth_path
+}
+
 /// FORS sign
-fn fors_sign(msg: &[u8], sk_seed: &[u8; N], pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> (Vec<[u8; N]>, Vec<Vec<[u8; N]>>) {
+fn fors_sign(
+    msg: &[u8],
+    sk_seed: &[u8; N],
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> (Vec<[u8; N]>, Vec<Vec<[u8; N]>>) {
     // Split message into indices
     let indices = fors_indices(msg);
 
@@ -424,43 +543,19 @@ fn fors_sign(msg: &[u8], sk_seed: &[u8; N], pk_seed: &[u8; N], addr: &[u8; ADDR_
         sk_sig.push(fors_sk_gen(sk_seed, addr, idx as u32, i as u32));
 
         // Authentication path
-        let (_, auth_path) = fors_node_auth(sk_seed, idx as u32, K as u32, pk_seed, addr, i as u32);
-        auth_paths.push(auth_path);
+        auth_paths.push(fors_auth_path(sk_seed, idx as u32, pk_seed, addr, i as u32));
     }
 
     (sk_sig, auth_paths)
 }
 
-/// FORS node with auth path
-fn fors_node_auth(sk_seed: &[u8; N], idx: u32, height: u32, pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE], tree_idx: u32) -> ([u8; N], Vec<[u8; N]>) {
-    let mut auth_path = Vec::new();
-
-    if height == 0 {
-        return (fors_sk_gen(sk_seed, addr, idx, tree_idx), auth_path);
-    }
-
-    let (left, left_auth) = fors_node_auth(sk_seed, 2 * idx, height - 1, pk_seed, addr, tree_idx);
-    let (right, right_auth) = fors_node_auth(sk_seed, 2 * idx + 1, height - 1, pk_seed, addr, tree_idx);
-
-    // Build auth path: children's paths first, then sibling
-    if idx % 2 == 0 {
-        auth_path.extend(left_auth);
-        auth_path.push(right);
-    } else {
-        auth_path.extend(right_auth);
-        auth_path.push(left);
-    }
-
-    let mut node_addr = *addr;
-    let tree_addr = ((tree_idx as u64) << 32) | (idx as u64);
-    set_tree(&mut node_addr, tree_addr);
-    let node = h_node(pk_seed, &node_addr, &left, &right);
-
-    (node, auth_path)
-}
-
 /// FORS verify
-fn fors_verify(msg: &[u8], sig: &(Vec<[u8; N]>, Vec<Vec<[u8; N]>>), pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> [u8; N] {
+fn fors_verify(
+    msg: &[u8],
+    sig: &(Vec<[u8; N]>, Vec<Vec<[u8; N]>>),
+    pk_seed: &[u8; N],
+    addr: &[u8; ADDR_SIZE],
+) -> [u8; N] {
     let (sk_sig, auth_paths) = sig;
     let indices = fors_indices(msg);
 
@@ -501,7 +596,7 @@ fn fors_verify(msg: &[u8], sig: &(Vec<[u8; N]>, Vec<Vec<[u8; N]>>), pk_seed: &[u
 /// Split message into FORS indices
 fn fors_indices(msg: &[u8]) -> Vec<usize> {
     let mut indices = Vec::with_capacity(A);
-    let bits_per_index = (K as f64).log2().ceil() as usize; // 14 bits per index
+    let bits_per_index = K;
 
     let mut bit_idx = 0;
     for _ in 0..A {
@@ -525,7 +620,13 @@ fn fors_indices(msg: &[u8]) -> Vec<usize> {
 // ============================================================================
 
 /// Hypertree sign
-fn ht_sign(msg: &[u8; N], sk_seed: &[u8; N], pk_seed: &[u8; N], tree_idx: u64, leaf_idx: u32) -> Vec<(Vec<[u8; N]>, [[u8; N]; LEN])> {
+fn ht_sign(
+    msg: &[u8; N],
+    sk_seed: &[u8; N],
+    pk_seed: &[u8; N],
+    tree_idx: u64,
+    leaf_idx: u32,
+) -> Vec<(Vec<[u8; N]>, [[u8; N]; LEN])> {
     let mut sig = Vec::with_capacity(D);
     let mut root = *msg;
     let mut cur_tree = tree_idx;
@@ -561,9 +662,7 @@ fn ht_sign(msg: &[u8; N], sk_seed: &[u8; N], pk_seed: &[u8; N], tree_idx: u64, l
         sig.push((auth_path, wots_sig));
         root = node;
 
-        // Move to next tree
-        cur_tree = (cur_tree << H_PRIME) | (cur_leaf as u64);
-        cur_leaf = (cur_tree & ((1 << H_PRIME) - 1)) as u32;
+        cur_leaf = (cur_tree & ((1u64 << H_PRIME) - 1)) as u32;
         cur_tree >>= H_PRIME;
     }
 
@@ -571,7 +670,13 @@ fn ht_sign(msg: &[u8; N], sk_seed: &[u8; N], pk_seed: &[u8; N], tree_idx: u64, l
 }
 
 /// Hypertree verify
-fn ht_verify(msg: &[u8; N], sig: &[(Vec<[u8; N]>, [[u8; N]; LEN])], pk_seed: &[u8; N], tree_idx: u64, leaf_idx: u32) -> [u8; N] {
+fn ht_verify(
+    msg: &[u8; N],
+    sig: &[(Vec<[u8; N]>, [[u8; N]; LEN])],
+    pk_seed: &[u8; N],
+    tree_idx: u64,
+    leaf_idx: u32,
+) -> [u8; N] {
     let mut root = *msg;
     let mut cur_tree = tree_idx;
     let mut cur_leaf = leaf_idx;
@@ -605,9 +710,7 @@ fn ht_verify(msg: &[u8; N], sig: &[(Vec<[u8; N]>, [[u8; N]; LEN])], pk_seed: &[u
 
         root = node;
 
-        // Move to next tree
-        cur_tree = (cur_tree << H_PRIME) | (cur_leaf as u64);
-        cur_leaf = (cur_tree & ((1 << H_PRIME) - 1)) as u32;
+        cur_leaf = (cur_tree & ((1u64 << H_PRIME) - 1)) as u32;
         cur_tree >>= H_PRIME;
     }
 
@@ -714,21 +817,26 @@ pub fn sign(sk: &SlhDsaSecretKey, message: &[u8]) -> SlhDsaSignature {
     rng.fill_bytes(&mut opt_rand);
     let r = prf_msg(&sk.prf_key, &opt_rand, message);
 
-    // Step 2: Compute message digest
+    // Step 2: Compute message digest and stateless hypertree indices.
     let digest = h_msg(&r, &sk.pk_seed, &sk.pk_root, message);
-
-    // Step 3: Use fixed tree and leaf indices
-    // The public key root is computed for the full tree, so we must use
-    // consistent indices. In a production implementation, the indices would
-    // be derived from the message hash and the root would be computed lazily.
-    let tree_idx = 0u64;
-    let leaf_idx = 0u32;
+    let tree_idx = digest.tree_idx;
+    let leaf_idx = digest.leaf_idx;
 
     // Step 4: FORS sign
-    let fors_sig = fors_sign(&digest, &sk.sk_seed, &sk.pk_seed, &make_addr(ADDR_TYPE_FORS));
+    let fors_sig = fors_sign(
+        &digest.fors_msg,
+        &sk.sk_seed,
+        &sk.pk_seed,
+        &make_addr(ADDR_TYPE_FORS),
+    );
 
     // Step 5: Get FORS public key
-    let fors_pk = fors_verify(&digest, &fors_sig, &sk.pk_seed, &make_addr(ADDR_TYPE_FORS));
+    let fors_pk = fors_verify(
+        &digest.fors_msg,
+        &fors_sig,
+        &sk.pk_seed,
+        &make_addr(ADDR_TYPE_FORS),
+    );
 
     // Step 6: Hypertree sign
     // The hypertree signature signs the FORS public key
@@ -748,13 +856,27 @@ pub fn sign(sk: &SlhDsaSecretKey, message: &[u8]) -> SlhDsaSignature {
 pub fn verify(pk: &SlhDsaPublicKey, message: &[u8], sig: &SlhDsaSignature) -> bool {
     // Step 1: Recompute message digest
     let digest = h_msg(&sig.r, &pk.pk_seed, &pk.pk_root, message);
+    if sig.tree_idx != digest.tree_idx || sig.leaf_idx != digest.leaf_idx {
+        return false;
+    }
 
     // Step 2: Verify FORS signature to get FORS public key
-    let fors_pk = fors_verify(&digest, &sig.fors_sig, &pk.pk_seed, &make_addr(ADDR_TYPE_FORS));
+    let fors_pk = fors_verify(
+        &digest.fors_msg,
+        &sig.fors_sig,
+        &pk.pk_seed,
+        &make_addr(ADDR_TYPE_FORS),
+    );
 
     // Step 3: Verify hypertree signature
     // The hypertree signature should recover the same root as the public key
-    let root = ht_verify(&fors_pk, &sig.ht_sig, &pk.pk_seed, sig.tree_idx, sig.leaf_idx);
+    let root = ht_verify(
+        &fors_pk,
+        &sig.ht_sig,
+        &pk.pk_seed,
+        sig.tree_idx,
+        sig.leaf_idx,
+    );
 
     // Step 4: Check root matches public key
     // In a full implementation, root would be the actual Merkle tree root.
