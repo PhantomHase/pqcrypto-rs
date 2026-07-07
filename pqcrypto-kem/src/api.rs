@@ -22,6 +22,12 @@ pub fn keygen() -> (MlKem768PublicKey, MlKem768SecretKey) {
     (MlKem768PublicKey(pk), MlKem768SecretKey(sk))
 }
 
+/// Generate a new ML-KEM-768 key pair from explicit seeds (for testing/KAT).
+pub fn keygen_internal(d: &[u8; 32], z: &[u8; 32]) -> (MlKem768PublicKey, MlKem768SecretKey) {
+    let (pk, sk) = keygen::keygen_internal(d, z);
+    (MlKem768PublicKey(pk), MlKem768SecretKey(sk))
+}
+
 /// Encapsulate a shared secret to a public key.
 ///
 /// Returns (ciphertext, shared_secret).
@@ -34,6 +40,15 @@ pub fn keygen() -> (MlKem768PublicKey, MlKem768SecretKey) {
 /// ```
 pub fn encapsulate(pk: &MlKem768PublicKey) -> Result<(MlKem768Ciphertext, SharedSecret), KemError> {
     let (ct, ss) = encaps::encaps(&pk.0)?;
+    Ok((MlKem768Ciphertext(ct), SharedSecret(ss)))
+}
+
+/// Encapsulate a shared secret to a public key with explicit message/entropy (for testing/KAT).
+pub fn encapsulate_internal(
+    pk: &MlKem768PublicKey,
+    m: &[u8; 32],
+) -> Result<(MlKem768Ciphertext, SharedSecret), KemError> {
+    let (ct, ss) = encaps::encaps_internal(&pk.0, m)?;
     Ok((MlKem768Ciphertext(ct), SharedSecret(ss)))
 }
 

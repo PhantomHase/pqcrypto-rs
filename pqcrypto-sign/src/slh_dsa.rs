@@ -762,14 +762,26 @@ pub fn keygen() -> (SlhDsaPublicKey, SlhDsaSecretKey) {
     rng.fill_bytes(&mut prf_key);
     rng.fill_bytes(&mut pk_seed);
 
-    // Compute public key root
-    let pk_root = compute_pk_root(&sk_seed, &pk_seed);
+    keygen_internal(&sk_seed, &prf_key, &pk_seed)
+}
 
-    let pk = SlhDsaPublicKey { pk_seed, pk_root };
+/// Generate SLH-DSA key pair with explicit seeds (for testing/KAT).
+pub fn keygen_internal(
+    sk_seed: &[u8; N],
+    prf_key: &[u8; N],
+    pk_seed: &[u8; N],
+) -> (SlhDsaPublicKey, SlhDsaSecretKey) {
+    // Compute public key root
+    let pk_root = compute_pk_root(sk_seed, pk_seed);
+
+    let pk = SlhDsaPublicKey {
+        pk_seed: *pk_seed,
+        pk_root,
+    };
     let sk = SlhDsaSecretKey {
-        sk_seed,
-        prf_key,
-        pk_seed,
+        sk_seed: *sk_seed,
+        prf_key: *prf_key,
+        pk_seed: *pk_seed,
         pk_root,
     };
 
@@ -805,7 +817,17 @@ pub fn sign(sk: &SlhDsaSecretKey, message: &[u8]) -> SlhDsaSignature {
     // Step 1: Generate randomizer
     let mut opt_rand = [0u8; N];
     rng.fill_bytes(&mut opt_rand);
-    let r = prf_msg(&sk.prf_key, &opt_rand, message);
+
+    sign_internal(sk, message, &opt_rand)
+}
+
+/// Sign a message with explicit randomizer (for testing/KAT).
+pub fn sign_internal(
+    sk: &SlhDsaSecretKey,
+    message: &[u8],
+    opt_rand: &[u8; N],
+) -> SlhDsaSignature {
+    let r = prf_msg(&sk.prf_key, opt_rand, message);
 
     // Step 2: Compute message digest and stateless hypertree indices.
     let digest = h_msg(&r, &sk.pk_seed, &sk.pk_root, message);

@@ -64,14 +64,15 @@ pub fn montgomery_reduce(a: i32) -> i16 {
 #[inline]
 pub fn barrett_reduce_signed(a: i32) -> i16 {
     let r = barrett_reduce(a);
-    // Map [0, q) to [-(q-1)/2, (q-1)/2]
-    // If r > (q-1)/2, subtract q
+    // Map [0, q) to [-(q-1)/2, (q-1)/2] in constant-time
     let half = (Q as i16 - 1) / 2;
-    if r > half {
-        r - Q as i16
-    } else {
-        r
-    }
+    let is_greater = subtle::Choice::from(((r > half) as u8) & 1);
+    let mask = subtle::ConditionallySelectable::conditional_select(
+        &0i16,
+        &(Q as i16),
+        is_greater,
+    );
+    r - mask
 }
 
 #[cfg(test)]

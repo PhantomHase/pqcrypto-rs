@@ -56,27 +56,21 @@ pub fn decaps(sk: &SecretKey, ct: &[u8; CT_LEN]) -> Result<[u8; SS_LEN], KemErro
 
     // Step 5: Check if ct' == ct
     let ct_eq = constant_time_compare(&ct_prime, ct);
+    let mask = (ct_eq as u8).wrapping_neg(); // 0xff if equal, 0x00 if not
 
-    // Step 6: Derive shared secret
-    if ct_eq {
-        // Correct decryption: K = KDF(K̄' || ct)
-        let mut kdf_input = Vec::with_capacity(SEED_LEN + CT_LEN);
-        kdf_input.extend_from_slice(&k_bar_prime);
-        kdf_input.extend_from_slice(ct);
-        let k = sha3_256(&kdf_input);
-        let mut ss = [0u8; SS_LEN];
-        ss.copy_from_slice(&k[..SS_LEN]);
-        Ok(ss)
-    } else {
-        // Implicit rejection: K = KDF(z || ct)
-        let mut kdf_input = Vec::with_capacity(SEED_LEN + CT_LEN);
-        kdf_input.extend_from_slice(&sk.z);
-        kdf_input.extend_from_slice(ct);
-        let k = sha3_256(&kdf_input);
-        let mut ss = [0u8; SS_LEN];
-        ss.copy_from_slice(&k[..SS_LEN]);
-        Ok(ss)
+    // Step 6: Derive shared secret in constant-time
+    let mut selected_key = [0u8; SEED_LEN];
+    for i in 0..SEED_LEN {
+        selected_key[i] = (k_bar_prime[i] & mask) | (sk.z[i] & !mask);
     }
+
+    let mut kdf_input = Vec::with_capacity(SEED_LEN + CT_LEN);
+    kdf_input.extend_from_slice(&selected_key);
+    kdf_input.extend_from_slice(ct);
+    let k = sha3_256(&kdf_input);
+    let mut ss = [0u8; SS_LEN];
+    ss.copy_from_slice(&k[..SS_LEN]);
+    Ok(ss)
 }
 
 /// CPAPKE Decryption.

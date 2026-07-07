@@ -14,11 +14,27 @@ pub fn keygen() -> (MlDsa65PublicKey, MlDsa65SecretKey) {
     (MlDsa65PublicKey(pk), MlDsa65SecretKey(sk))
 }
 
+/// Generate a new ML-DSA-65 key pair from explicit seed (for testing/KAT).
+pub fn keygen_internal(zeta: &[u8; SEED_LEN]) -> (MlDsa65PublicKey, MlDsa65SecretKey) {
+    let (pk, sk) = ml_dsa::keygen_internal(zeta);
+    (MlDsa65PublicKey(pk), MlDsa65SecretKey(sk))
+}
+
 /// Sign a message using ML-DSA-65.
 ///
 /// Returns the signature.
 pub fn sign(sk: &MlDsa65SecretKey, message: &[u8]) -> MlDsa65Signature {
     let sig = ml_dsa::sign(&sk.0, message);
+    MlDsa65Signature(sig)
+}
+
+/// Sign a message using ML-DSA-65 with explicit randomizer (for testing/KAT).
+pub fn sign_internal(
+    sk: &MlDsa65SecretKey,
+    message: &[u8],
+    rnd: &[u8; SEED_LEN],
+) -> MlDsa65Signature {
+    let sig = ml_dsa::sign_internal(&sk.0, message, rnd);
     MlDsa65Signature(sig)
 }
 
