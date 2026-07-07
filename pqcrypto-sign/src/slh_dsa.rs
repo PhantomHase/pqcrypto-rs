@@ -88,9 +88,9 @@ fn sha256_full(data: &[u8]) -> [u8; 32] {
 /// PRF: Pseudorandom function
 /// PRF(seed, addr) = SHA-256(seed || addr)[..n]
 fn prf(seed: &[u8; N], addr: &[u8; ADDR_SIZE]) -> [u8; N] {
-    let mut data = Vec::with_capacity(N + ADDR_SIZE);
-    data.extend_from_slice(seed);
-    data.extend_from_slice(addr);
+    let mut data = [0u8; N + ADDR_SIZE];
+    data[..N].copy_from_slice(seed);
+    data[N..].copy_from_slice(addr);
     h_sha256(&data)
 }
 
@@ -140,20 +140,21 @@ fn h_msg(r: &[u8; N], pk_seed: &[u8; N], pk_root: &[u8; N], msg: &[u8]) -> Messa
 
 /// T_l: L-tree hash (for XMSS)
 fn t_l(seed: &[u8; N], addr: &[u8; ADDR_SIZE], data: &[u8]) -> [u8; N] {
-    let mut input = Vec::with_capacity(N + ADDR_SIZE + data.len());
-    input.extend_from_slice(seed);
-    input.extend_from_slice(addr);
-    input.extend_from_slice(data);
-    h_sha256(&input)
+    let mut input = [0u8; N + ADDR_SIZE + 192];
+    let len = N + ADDR_SIZE + data.len();
+    input[..N].copy_from_slice(seed);
+    input[N..N + ADDR_SIZE].copy_from_slice(addr);
+    input[N + ADDR_SIZE..len].copy_from_slice(data);
+    h_sha256(&input[..len])
 }
 
 /// H: Hash function for Merkle tree nodes
 fn h_node(seed: &[u8; N], addr: &[u8; ADDR_SIZE], left: &[u8; N], right: &[u8; N]) -> [u8; N] {
-    let mut input = Vec::with_capacity(2 * N + N + ADDR_SIZE);
-    input.extend_from_slice(seed);
-    input.extend_from_slice(addr);
-    input.extend_from_slice(left);
-    input.extend_from_slice(right);
+    let mut input = [0u8; 3 * N + ADDR_SIZE];
+    input[..N].copy_from_slice(seed);
+    input[N..N + ADDR_SIZE].copy_from_slice(addr);
+    input[N + ADDR_SIZE..2 * N + ADDR_SIZE].copy_from_slice(left);
+    input[2 * N + ADDR_SIZE..].copy_from_slice(right);
     h_sha256(&input)
 }
 
@@ -171,10 +172,10 @@ fn chain_func(
     for i in start..start + steps {
         addr_copy[20..24].copy_from_slice(&(i as u32).to_be_bytes());
         addr_copy[24..28].copy_from_slice(&(0u32).to_be_bytes());
-        let mut input = Vec::with_capacity(2 * N + ADDR_SIZE);
-        input.extend_from_slice(seed);
-        input.extend_from_slice(&addr_copy);
-        input.extend_from_slice(&result);
+        let mut input = [0u8; 2 * N + ADDR_SIZE];
+        input[..N].copy_from_slice(seed);
+        input[N..N + ADDR_SIZE].copy_from_slice(&addr_copy);
+        input[N + ADDR_SIZE..].copy_from_slice(&result);
         result = h_sha256(&input);
     }
     result
@@ -343,7 +344,10 @@ fn l_tree(pk_seed: &[u8; N], addr: &[u8; ADDR_SIZE], pk: &[[u8; N]; LEN]) -> [u8
             set_tree_index(&mut node_addr, new_len as u32);
 
             if i + 1 < len {
-                nodes[new_len] = t_l(pk_seed, &node_addr, &[nodes[i], nodes[i + 1]].concat());
+                let mut combined = [0u8; 2 * N];
+                combined[..N].copy_from_slice(&nodes[i]);
+                combined[N..].copy_from_slice(&nodes[i + 1]);
+                nodes[new_len] = t_l(pk_seed, &node_addr, &combined);
             } else {
                 nodes[new_len] = nodes[i];
             }
@@ -366,35 +370,21 @@ fn xmss_node(
     height: u32,
     pk_seed: &[u8; N],
     addr: &[u8; ADDR_SIZE],
-) -> ([u8; N], Vec<[u8; N]>) {
-    let mut auth_path = Vec::new();
-
+) -> [u8; N] {
     if height == 0 {
         let mut leaf_addr = *addr;
         set_keypair(&mut leaf_addr, idx);
-        let pk = wots_pk_gen(sk_seed, pk_seed, &leaf_addr);
-        return (pk, auth_path);
+        return wots_pk_gen(sk_seed, pk_seed, &leaf_addr);
     }
 
     // Recursive computation
-    let (left, left_auth) = xmss_node(sk_seed, 2 * idx, height - 1, pk_seed, addr);
-    let (right, right_auth) = xmss_node(sk_seed, 2 * idx + 1, height - 1, pk_seed, addr);
-
-    // Build auth path: children's auth paths first (lower levels), then sibling (higher level)
-    if idx % 2 == 0 {
-        auth_path.extend(left_auth);
-        auth_path.push(right);
-    } else {
-        auth_path.extend(right_auth);
-        auth_path.push(left);
-    }
+    let left = xmss_node(sk_seed, 2 * idx, height - 1, pk_seed, addr);
+    let right = xmss_node(sk_seed, 2 * idx + 1, height - 1, pk_seed, addr);
 
     let mut node_addr = *addr;
     set_tree_height(&mut node_addr, height);
     set_tree_index(&mut node_addr, idx);
-    let node = h_node(pk_seed, &node_addr, &left, &right);
-
-    (node, auth_path)
+    h_node(pk_seed, &node_addr, &left, &right)
 }
 
 fn xmss_auth_path(
@@ -407,7 +397,7 @@ fn xmss_auth_path(
 
     for height in 0..H_PRIME {
         let sibling_idx = (leaf_idx >> height) ^ 1;
-        let (sibling, _) = xmss_node(sk_seed, sibling_idx, height as u32, pk_seed, addr);
+        let sibling = xmss_node(sk_seed, sibling_idx, height as u32, pk_seed, addr);
         auth_path.push(sibling);
     }
 
@@ -802,7 +792,7 @@ fn compute_pk_root(sk_seed: &[u8; N], pk_seed: &[u8; N]) -> [u8; N] {
     set_layer(&mut top_addr, (D - 1) as u32);
     // tree=0 (default from make_addr)
 
-    let (root, _) = xmss_node(sk_seed, 0, H_PRIME as u32, pk_seed, &top_addr);
+    let root = xmss_node(sk_seed, 0, H_PRIME as u32, pk_seed, &top_addr);
     root
 }
 
@@ -994,7 +984,7 @@ mod tests {
         let pk_root = compute_pk_root(&sk_seed, &pk_seed);
         let mut top_addr = make_addr(ADDR_TYPE_TREE);
         set_layer(&mut top_addr, (D - 1) as u32);
-        let (node_root, _) = xmss_node(&sk_seed, 0, H_PRIME as u32, &pk_seed, &top_addr);
+        let node_root = xmss_node(&sk_seed, 0, H_PRIME as u32, &pk_seed, &top_addr);
 
         assert_eq!(
             pk_root, node_root,
