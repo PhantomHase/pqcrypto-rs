@@ -12,10 +12,10 @@ The architecture consists of:
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
 | 1 | WebAssembly Crate (`pqcrypto-wasm`) | Create crate, implement `wasm-bindgen` bindings for ML-KEM-768, ML-DSA-65, SLH-DSA-SHA2-128s, and build via `wasm-pack` | none | DONE |
-| 2 | Interactive Playground | Develop `index.html`, `index.js`, and styling with tabs, dark mode, and operations | M1 | IN_PROGRESS |
-| 3 | Documentation (mdBook & rustdoc) | Initialize `book`, write theoretical/usage docs, verify warning-free cargo doc | none | PLANNED |
-| 4 | Contributing Guidelines | Update `CONTRIBUTING.md` with workspace architecture and build/test instructions | none | PLANNED |
-| 5 | E2E Verification & Audit | Ensure all tests pass, build completes, playground functions, and run forensic audit | M1, M2, M3, M4 | PLANNED |
+| 2 | Interactive Playground | Develop `index.html`, `index.js`, and styling with tabs, dark mode, and operations | M1 | DONE |
+| 3 | Documentation (mdBook & rustdoc) | Initialize `book`, write theoretical/usage docs, verify warning-free cargo doc | none | DONE |
+| 4 | Contributing Guidelines | Update `CONTRIBUTING.md` with workspace architecture and build/test instructions | none | DONE |
+| 5 | E2E Verification & Audit | Ensure all tests pass, build completes, playground functions, and run forensic audit | M1, M2, M3, M4 | DONE |
 
 ## Interface Contracts
 ### `pqcrypto-wasm` JS Bindings
