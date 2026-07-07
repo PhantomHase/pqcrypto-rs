@@ -45,7 +45,8 @@ pub mod ml_dsa_params {
 
     /// Secret key length: seed (32) + tr (32) + s1 encoded + s2 encoded + hint
     /// s1, s2 use η bits: k * η * 256 / 8 + l * η * 256 / 8
-    pub const SK_LEN: usize = SEED_LEN * 3 + super::ml_dsa_params::K * 128 + super::ml_dsa_params::L * 128;
+    pub const SK_LEN: usize =
+        SEED_LEN * 3 + super::ml_dsa_params::K * 128 + super::ml_dsa_params::L * 128;
 
     /// Maximum signature length (approximate)
     pub const SIG_LEN: usize = 4096;

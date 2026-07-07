@@ -2,7 +2,7 @@
 //!
 //! Demonstrates key generation, encapsulation, and decapsulation.
 
-use pqcrypto_kem::api::{keygen, encapsulate, decapsulate};
+use pqcrypto_kem::api::{decapsulate, encapsulate, keygen};
 
 fn main() {
     println!("=== PQCrypto-RS: ML-KEM-768 Example ===\n");
@@ -31,7 +31,7 @@ fn main() {
 
     // Step 4: Hybrid encryption example
     println!("4. Hybrid encryption (ML-KEM + AES-256-GCM)...");
-    use pqcrypto_kem::api::{hybrid_encrypt, hybrid_decrypt};
+    use pqcrypto_kem::api::{hybrid_decrypt, hybrid_encrypt};
 
     let message = b"Hello, post-quantum world!";
     let aad = b"example-aad";

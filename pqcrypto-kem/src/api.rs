@@ -3,10 +3,10 @@
 //! Provides a high-level, easy-to-use interface for key generation,
 //! encapsulation, and decapsulation.
 
-use crate::keygen::{self, PublicKey, SecretKey};
-use crate::encaps;
 use crate::decaps;
-use crate::{KemError, PK_LEN, SK_LEN, CT_LEN, SS_LEN};
+use crate::encaps;
+use crate::keygen::{self, PublicKey, SecretKey};
+use crate::{KemError, CT_LEN, PK_LEN, SK_LEN, SS_LEN};
 
 /// Generate a new ML-KEM-768 key pair.
 ///
@@ -19,10 +19,7 @@ use crate::{KemError, PK_LEN, SK_LEN, CT_LEN, SS_LEN};
 /// ```
 pub fn keygen() -> (MlKem768PublicKey, MlKem768SecretKey) {
     let (pk, sk) = keygen::keygen();
-    (
-        MlKem768PublicKey(pk),
-        MlKem768SecretKey(sk),
-    )
+    (MlKem768PublicKey(pk), MlKem768SecretKey(sk))
 }
 
 /// Encapsulate a shared secret to a public key.
@@ -37,10 +34,7 @@ pub fn keygen() -> (MlKem768PublicKey, MlKem768SecretKey) {
 /// ```
 pub fn encapsulate(pk: &MlKem768PublicKey) -> Result<(MlKem768Ciphertext, SharedSecret), KemError> {
     let (ct, ss) = encaps::encaps(&pk.0)?;
-    Ok((
-        MlKem768Ciphertext(ct),
-        SharedSecret(ss),
-    ))
+    Ok((MlKem768Ciphertext(ct), SharedSecret(ss)))
 }
 
 /// Decapsulate a ciphertext to recover the shared secret.
@@ -149,7 +143,7 @@ pub fn hybrid_encrypt(
     message: &[u8],
     aad: &[u8],
 ) -> Result<(Vec<u8>, MlKem768Ciphertext), KemError> {
-    use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
     use pqcrypto_core::sym::hkdf_extract_expand;
 
     // Step 1: ML-KEM encapsulation
@@ -185,7 +179,7 @@ pub fn hybrid_decrypt(
     ciphertext: &[u8],
     aad: &[u8],
 ) -> Result<Vec<u8>, KemError> {
-    use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
     use pqcrypto_core::sym::hkdf_extract_expand;
 
     // Step 1: ML-KEM decapsulation

@@ -18,7 +18,7 @@ use pqcrypto_core::sampling::{sample_cbd, sample_cbd_vec, sample_uniform};
 use pqcrypto_core::sym::g;
 use pqcrypto_core::N;
 
-use crate::{K, ETA1, SEED_LEN, PK_LEN, SK_LEN};
+use crate::{ETA1, K, PK_LEN, SEED_LEN, SK_LEN};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// A public key for ML-KEM-768.

@@ -1,0 +1,23 @@
+[package]
+name = "pqcrypto-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "WebAssembly bindings for pqcrypto-rs (ML-KEM, ML-DSA, SLH-DSA)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+pqcrypto-core = { path = "../pqcrypto-core" }
+pqcrypto-kem = { path = "../pqcrypto-kem" }
+pqcrypto-sign = { path = "../pqcrypto-sign" }
+base64 = { workspace = true }
+hex = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_v2 = { package = "getrandom", version = "0.2", features = ["js"] }
+

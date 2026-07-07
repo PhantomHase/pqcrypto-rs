@@ -155,8 +155,7 @@ impl Poly {
             acc >>= d;
             bits -= d;
             // Decompress: round(compressed * q / 2^d)
-            poly.coeffs[i] =
-                ((compressed as u64 * Q as u64 + (1u64 << (d - 1))) >> d) as u16 % Q;
+            poly.coeffs[i] = ((compressed as u64 * Q as u64 + (1u64 << (d - 1))) >> d) as u16 % Q;
         }
         poly
     }

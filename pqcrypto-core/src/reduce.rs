@@ -101,7 +101,11 @@ mod tests {
         // montgomery_reduce(q) = q * R^{-1} mod q = 0
         let r = montgomery_reduce(Q as i32);
         // The result should be in [0, q)
-        assert!(r >= 0 && r < Q as i16, "Montgomery result out of range: {}", r);
+        assert!(
+            r >= 0 && r < Q as i16,
+            "Montgomery result out of range: {}",
+            r
+        );
     }
 
     #[test]

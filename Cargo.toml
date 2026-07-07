@@ -4,6 +4,7 @@ members = [
     "pqcrypto-kem",
     "pqcrypto-sign",
     "pqcrypto-cli",
+    "pqcrypto-wasm",
 ]
 resolver = "2"
 

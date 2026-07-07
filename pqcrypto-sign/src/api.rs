@@ -3,8 +3,8 @@
 //! Provides a high-level interface for key generation, signing, and verification.
 
 use crate::ml_dsa::{self, MlDsaPublicKey, MlDsaSecretKey, MlDsaSignature};
+use crate::ml_dsa_params::SEED_LEN;
 use crate::SignError;
-use crate::ml_dsa_params::{SEED_LEN, PK_LEN, SK_LEN, SIG_LEN};
 
 /// Generate a new ML-DSA-65 key pair.
 ///
@@ -17,10 +17,7 @@ pub fn keygen() -> (MlDsa65PublicKey, MlDsa65SecretKey) {
 /// Sign a message using ML-DSA-65.
 ///
 /// Returns the signature.
-pub fn sign(
-    sk: &MlDsa65SecretKey,
-    message: &[u8],
-) -> MlDsa65Signature {
+pub fn sign(sk: &MlDsa65SecretKey, message: &[u8]) -> MlDsa65Signature {
     let sig = ml_dsa::sign(&sk.0, message);
     MlDsa65Signature(sig)
 }
@@ -28,11 +25,7 @@ pub fn sign(
 /// Verify a signature.
 ///
 /// Returns true if the signature is valid.
-pub fn verify(
-    pk: &MlDsa65PublicKey,
-    message: &[u8],
-    sig: &MlDsa65Signature,
-) -> bool {
+pub fn verify(pk: &MlDsa65PublicKey, message: &[u8], sig: &MlDsa65Signature) -> bool {
     ml_dsa::verify(&pk.0, message, &sig.0)
 }
 
@@ -67,8 +60,11 @@ impl MlDsa65PublicKey {
 
     /// Deserialize from bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SignError> {
-        if bytes.len() < SEED_LEN {
-            return Err(SignError::SerializationError("Public key too short".into()));
+        if bytes.len() != 1952 {
+            return Err(SignError::SerializationError(format!(
+                "Invalid public key length: expected 1952, got {}",
+                bytes.len()
+            )));
         }
 
         let mut rho = [0u8; SEED_LEN];
@@ -124,6 +120,18 @@ impl MlDsa65SecretKey {
         }
         bytes
     }
+
+    /// Deserialize from bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SignError> {
+        if bytes.len() != 2912 {
+            return Err(SignError::SerializationError(format!(
+                "Invalid secret key length: expected 2912, got {}",
+                bytes.len()
+            )));
+        }
+        let sk = crate::ml_dsa::decode_sk(bytes)?;
+        Ok(Self(sk))
+    }
 }
 
 /// ML-DSA-65 signature.
@@ -152,8 +160,11 @@ impl MlDsa65Signature {
 
     /// Deserialize from bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SignError> {
-        if bytes.len() < SEED_LEN {
-            return Err(SignError::SerializationError("Signature too short".into()));
+        if bytes.len() != 6688 {
+            return Err(SignError::SerializationError(format!(
+                "Invalid signature length: expected 6688, got {}",
+                bytes.len()
+            )));
         }
 
         let mut c_tilde = [0u8; SEED_LEN];
@@ -167,8 +178,10 @@ impl MlDsa65Signature {
             for j in 0..crate::ml_dsa_params::N {
                 if offset + 4 <= bytes.len() {
                     z.polys[i].coeffs[j] = i32::from_le_bytes([
-                        bytes[offset], bytes[offset + 1],
-                        bytes[offset + 2], bytes[offset + 3],
+                        bytes[offset],
+                        bytes[offset + 1],
+                        bytes[offset + 2],
+                        bytes[offset + 3],
                     ]);
                     offset += 4;
                 }
@@ -222,5 +235,44 @@ mod tests {
         let recovered = MlDsa65PublicKey::from_bytes(&bytes).unwrap();
 
         assert_eq!(pk.0.rho, recovered.0.rho);
+    }
+
+    #[test]
+    fn test_secret_key_serialization() {
+        let (pk, sk) = keygen();
+        let bytes = sk.to_bytes();
+        let recovered = MlDsa65SecretKey::from_bytes(&bytes).unwrap();
+
+        assert_eq!(sk.0.rho, recovered.0.rho);
+        assert_eq!(sk.0.k, recovered.0.k);
+        assert_eq!(sk.0.tr, recovered.0.tr);
+        assert_eq!(sk.0.s1, recovered.0.s1);
+        assert_eq!(sk.0.s2, recovered.0.s2);
+        assert_eq!(sk.0.t0, recovered.0.t0);
+
+        let message = b"Strict deserialization test message";
+        let sig = sign(&recovered, message);
+        assert!(verify(&pk, message, &sig));
+    }
+
+    #[test]
+    fn test_invalid_length_deserialization() {
+        let pk_bytes = vec![0u8; 1951];
+        assert!(MlDsa65PublicKey::from_bytes(&pk_bytes).is_err());
+
+        let sk_bytes = vec![0u8; 2911];
+        assert!(MlDsa65SecretKey::from_bytes(&sk_bytes).is_err());
+
+        let sig_bytes = vec![0u8; 6687];
+        assert!(MlDsa65Signature::from_bytes(&sig_bytes).is_err());
+    }
+
+    #[test]
+    fn test_invalid_coefficients_deserialization() {
+        let (_, sk) = keygen();
+        let mut bytes = sk.to_bytes();
+        // Modify a coefficient in s1 to be out of bounds (9)
+        bytes[96] = 9;
+        assert!(MlDsa65SecretKey::from_bytes(&bytes).is_err());
     }
 }

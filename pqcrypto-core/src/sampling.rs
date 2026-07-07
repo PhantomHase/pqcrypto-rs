@@ -102,8 +102,8 @@ pub fn sample_uniform(bytes: &[u8]) -> Poly {
 /// This is the optimized version used in ML-KEM that generates pseudorandom
 /// bytes from a seed using SHAKE-128, then samples from the uniform distribution.
 pub fn sample_uniform_from_seed(seed: &[u8; 32]) -> Poly {
+    use sha3::digest::{ExtendableOutput, Update, XofReader};
     use sha3::Shake128;
-    use sha3::digest::{Update, ExtendableOutput, XofReader};
 
     // Generate enough pseudorandom bytes for rejection sampling
     // We need about 2 * N * ceil(log2(q)) / 8 = 2 * 256 * 12 / 8 = 768 bytes

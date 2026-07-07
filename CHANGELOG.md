@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- WebAssembly binding crate `pqcrypto-wasm` exposing JS-friendly APIs for ML-KEM, ML-DSA, and SLH-DSA conforming to Hex and Base64 string formats.
+- Interactive, responsive, glassmorphic Browser Cryptographic Playground (`playground/`).
+- mdBook-based documentation site explaining theory, parameters, FIPS standards, and integration.
 - FIPS 203 ML-KEM NTT implementation with inverse transform and NTT-domain base multiplication.
 - SLH-DSA message-derived tree and leaf indices for stateless signing.
 
@@ -17,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Replaced fixed SLH-DSA hypertree indices with indices derived from `H_msg`.
+- Fixed CLI `sign` command to use the actual loaded secret key instead of a placeholder key.
+
 
 ## [0.1.0] - 2026-05-01
 

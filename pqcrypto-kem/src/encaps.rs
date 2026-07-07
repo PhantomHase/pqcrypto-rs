@@ -12,12 +12,12 @@
 use pqcrypto_core::ntt::{ntt_forward, ntt_pointwise};
 use pqcrypto_core::poly::Poly;
 use pqcrypto_core::sampling::{sample_cbd, sample_cbd_vec, sample_uniform};
-use pqcrypto_core::sym::{g, prf, shake128_xof, sha3_256};
+use pqcrypto_core::sym::{g, prf, sha3_256, shake128_xof};
 use pqcrypto_core::{N, Q};
 
 use crate::keygen::{encode_pk, PublicKey};
-use crate::{K, ETA1, ETA2, DU, DV, SEED_LEN, SS_LEN, CT_LEN};
 use crate::KemError;
+use crate::{CT_LEN, DU, DV, ETA1, ETA2, K, SEED_LEN, SS_LEN};
 
 /// Encapsulate a random message to a public key.
 ///

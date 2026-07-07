@@ -14,25 +14,48 @@ Thank you for your interest in contributing to PQCrypto-RS!
 8. Push to your fork
 9. Open a Pull Request
 
+## Workspace Architecture
+
+The workspace contains the following crates:
+- `pqcrypto-core` - Mathematical primitives (NTT, reduction, sampling)
+- `pqcrypto-kem` - ML-KEM-768 key encapsulation implementation
+- `pqcrypto-sign` - ML-DSA-65 and SLH-DSA-SHA2-128s signature implementations
+- `pqcrypto-wasm` - WebAssembly bindings (`wasm-bindgen`)
+- `pqcrypto-cli` - CommandLine interface facade
+
 ## Development Setup
 
 ```bash
-# Install Rust (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
 # Clone the repository
 git clone https://github.com/PhantomHase/pqcrypto-rs.git
 cd pqcrypto-rs
 
-# Build
-cargo build
+# Build the workspace
+cargo build --workspace
 
-# Test
-cargo test
+# Run tests
+cargo test --workspace
 
-# Bench
+# Run benchmarks
 cargo bench
 ```
+
+### WebAssembly Setup
+To build the WASM package and run the interactive browser playground, set up the wasm32 target and wasm-pack compiler:
+```bash
+# Add the wasm32 target
+rustup target add wasm32-unknown-unknown
+
+# Install wasm-pack
+cargo install wasm-pack
+
+# Compile the WASM bindings
+wasm-pack build pqcrypto-wasm --target web
+
+# Run WASM tests on host target
+cargo test -p pqcrypto-wasm
+```
+
 
 ## Code Style
 

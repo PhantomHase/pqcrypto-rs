@@ -363,7 +363,6 @@ fn sample_eta(seed: &[u8], nonce: u16) -> MlDsaPoly {
     poly
 }
 
-
 /// Sample polynomial in [-γ₁, γ₁] using SHAKE-256.
 fn sample_gamma1(seed: &[u8], nonce: u16) -> MlDsaPoly {
     let mut input = Vec::with_capacity(seed.len() + 2);
@@ -529,6 +528,73 @@ impl Drop for MlDsaSecretKey {
     fn drop(&mut self) {
         self.zeroize();
     }
+}
+
+/// Decode secret key from bytes (reconstructing t0).
+pub fn decode_sk(bytes: &[u8]) -> Result<MlDsaSecretKey, SignError> {
+    let expected_len = SEED_LEN * 3 + L * N + K * N; // 2912 bytes
+    if bytes.len() != expected_len {
+        return Err(SignError::SerializationError(format!(
+            "Invalid secret key length: expected {}, got {}",
+            expected_len,
+            bytes.len()
+        )));
+    }
+
+    let mut offset = 0;
+    let mut rho = [0u8; SEED_LEN];
+    rho.copy_from_slice(&bytes[offset..offset + SEED_LEN]);
+    offset += SEED_LEN;
+
+    let mut k = [0u8; SEED_LEN];
+    k.copy_from_slice(&bytes[offset..offset + SEED_LEN]);
+    offset += SEED_LEN;
+
+    let mut tr = [0u8; SEED_LEN];
+    tr.copy_from_slice(&bytes[offset..offset + SEED_LEN]);
+    offset += SEED_LEN;
+
+    let mut s1 = PolyVec::new(L);
+    for i in 0..L {
+        for j in 0..N {
+            let b = bytes[offset];
+            offset += 1;
+            if b > 2 * ETA as u8 {
+                return Err(SignError::SerializationError(
+                    "Secret key coefficient out of bounds".into(),
+                ));
+            }
+            s1.polys[i].coeffs[j] = (b as i32) - ETA as i32;
+        }
+    }
+
+    let mut s2 = PolyVec::new(K);
+    for i in 0..K {
+        for j in 0..N {
+            let b = bytes[offset];
+            offset += 1;
+            if b > 2 * ETA as u8 {
+                return Err(SignError::SerializationError(
+                    "Secret key coefficient out of bounds".into(),
+                ));
+            }
+            s2.polys[i].coeffs[j] = (b as i32) - ETA as i32;
+        }
+    }
+
+    // Reconstruct t0 from A, s1, and s2
+    let a = sample_matrix_a(&rho);
+    let t = a.mul_vec(&s1).add(&s2);
+    let (t0, _) = power2round_vec(&t, 13);
+
+    Ok(MlDsaSecretKey {
+        rho,
+        k,
+        tr,
+        s1,
+        s2,
+        t0,
+    })
 }
 
 /// ML-DSA-65 signature.

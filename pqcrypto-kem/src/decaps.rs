@@ -20,9 +20,9 @@ use pqcrypto_core::sym::{g, prf, sha3_256, shake128_xof};
 use pqcrypto_core::{N, Q};
 
 use crate::encaps::{cpapke_encrypt, encode_message};
-use crate::keygen::{encode_pk, decode_pk, encode_sk, PublicKey, SecretKey};
-use crate::{K, ETA1, ETA2, DU, DV, SEED_LEN, SS_LEN, CT_LEN};
+use crate::keygen::{decode_pk, encode_pk, encode_sk, PublicKey, SecretKey};
 use crate::KemError;
+use crate::{CT_LEN, DU, DV, ETA1, ETA2, K, SEED_LEN, SS_LEN};
 
 /// Decapsulate a ciphertext to recover the shared secret.
 ///
@@ -155,8 +155,8 @@ fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keygen::keygen;
     use crate::encaps::encaps_internal;
+    use crate::keygen::keygen;
 
     #[test]
     fn test_constant_time_compare() {

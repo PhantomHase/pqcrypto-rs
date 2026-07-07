@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post-Quantum Cryptography Playground</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-glow bg-glow-1"></div>
+    <div class="background-glow bg-glow-2"></div>
+    <div class="background-glow bg-glow-3"></div>
+
+    <div class="container">
+        <!-- Error / Success Alert Banner -->
+        <div id="alert-banner" class="alert-banner hidden">
+            <span class="alert-icon">
+                <!-- SVG Warning Icon -->
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </span>
+            <span id="alert-message" class="alert-message">Error message goes here</span>
+            <button id="alert-close" class="alert-close-btn" aria-label="Close alert">&times;</button>
+        </div>
+
+        <header class="app-header">
+            <div class="logo-area">
+                <svg class="logo-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <h1>PQCrypto <span class="accent-text">Playground</span></h1>
+            </div>
+            <p class="subtitle">Interactive WebAssembly exploration of NIST-standardized Post-Quantum Cryptographic algorithms.</p>
+            
+            <div class="global-controls">
+                <label for="encoding-toggle" class="encoding-label">Encoding Format:</label>
+                <div class="encoding-switch">
+                    <button class="encoding-btn active" data-encoding="hex">HEX</button>
+                    <button class="encoding-btn" data-encoding="base64">BASE64</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs" role="tablist">
+            <button class="tab-link active" data-tab="ml-kem-768" role="tab" aria-selected="true">
+                <span class="tab-badge">KEM</span>
+                <span class="tab-title">ML-KEM-768</span>
+            </button>
+            <button class="tab-link" data-tab="ml-dsa-65" role="tab" aria-selected="false">
+                <span class="tab-badge">DSA</span>
+                <span class="tab-title">ML-DSA-65</span>
+            </button>
+            <button class="tab-link" data-tab="slh-dsa-sha2-128s" role="tab" aria-selected="false">
+                <span class="tab-badge">SLH-DSA</span>
+                <span class="tab-title">SLH-DSA-128s</span>
+            </button>
+        </nav>
+
+        <!-- Tab Contents -->
+        <main class="tab-content-container">
+            
+            <!-- ================= ML-KEM-768 ================= -->
+            <section id="ml-kem-768" class="tab-panel active" role="tabpanel">
+                <div class="info-card">
+                    <div class="info-header">
+                        <svg class="info-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        <h3>ML-KEM-768 (Module-Lattice Key Encapsulation Mechanism)</h3>
+                    </div>
+                    <p>Standardized in FIPS 203. ML-KEM-768 is a lattice-based KEM designed for general-purpose key establishment, corresponding to Category 3 NIST security level (equivalent to AES-192 in hardness).</p>
+                    <div class="spec-grid">
+                        <div class="spec-item"><span class="spec-name">Public Key size</span> <span class="spec-val">1,184 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Secret Key size</span> <span class="spec-val">2,400 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Ciphertext size</span> <span class="spec-val">1,088 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Shared Secret size</span> <span class="spec-val">32 B</span></div>
+                    </div>
+                </div>
+
+                <div class="cards-grid">
+                    <!-- Key Generation -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">1</span>
+                            <h2>Key Generation</h2>
+                        </div>
+                        <p class="card-desc">Generate an ML-KEM-768 public and secret key pair.</p>
+                        <button id="kem-keygen-btn" class="btn btn-primary full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                            Generate Key Pair
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="kem-pk-out">Public Key (pk)</label>
+                                <button class="copy-btn" data-target="kem-pk-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="kem-pk-out" class="mono-text" readonly placeholder="Generated public key..."></textarea>
+                        </div>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="kem-sk-out">Secret Key (sk)</label>
+                                <button class="copy-btn" data-target="kem-sk-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="kem-sk-out" class="mono-text" readonly placeholder="Generated secret key..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Encapsulation -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">2</span>
+                            <h2>Encapsulation</h2>
+                        </div>
+                        <p class="card-desc">Encrypt a random shared secret using the recipient's public key.</p>
+                        
+                        <div class="input-group">
+                            <label for="kem-pk-encap">Recipient Public Key (pk)</label>
+                            <textarea id="kem-pk-encap" class="mono-text" placeholder="Paste 1,184 byte public key here..."></textarea>
+                            <div class="input-help">Leave empty to auto-fill generated public key.</div>
+                        </div>
+
+                        <button id="kem-encap-btn" class="btn btn-secondary full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            Encapsulate Key
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="kem-ct-out">Ciphertext (ct)</label>
+                                <button class="copy-btn" data-target="kem-ct-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="kem-ct-out" class="mono-text" readonly placeholder="Generated ciphertext..."></textarea>
+                        </div>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="kem-ss-encap">Shared Secret</label>
+                                <button class="copy-btn" data-target="kem-ss-encap" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="kem-ss-encap" class="mono-text" readonly placeholder="Generated shared secret..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Decapsulation -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">3</span>
+                            <h2>Decapsulation</h2>
+                        </div>
+                        <p class="card-desc">Decrypt the ciphertext using your secret key to retrieve the shared secret.</p>
+                        
+                        <div class="input-group">
+                            <label for="kem-sk-decap">Secret Key (sk)</label>
+                            <textarea id="kem-sk-decap" class="mono-text" placeholder="Paste 2,400 byte secret key here..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="kem-ct-decap">Ciphertext (ct)</label>
+                            <textarea id="kem-ct-decap" class="mono-text" placeholder="Paste 1,088 byte ciphertext here..."></textarea>
+                        </div>
+
+                        <button id="kem-decap-btn" class="btn btn-accent full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                            Decapsulate Key
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="kem-ss-decap">Decapsulated Shared Secret</label>
+                                <button class="copy-btn" data-target="kem-ss-decap" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="kem-ss-decap" class="mono-text" readonly placeholder="Recovered shared secret..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= ML-DSA-65 ================= -->
+            <section id="ml-dsa-65" class="tab-panel" role="tabpanel">
+                <div class="info-card">
+                    <div class="info-header">
+                        <svg class="info-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        <h3>ML-DSA-65 (Module-Lattice Digital Signature Algorithm)</h3>
+                    </div>
+                    <p>Standardized in FIPS 204. ML-DSA-65 is a lattice-based digital signature algorithm based on Dilithium, corresponding to Category 3 NIST security level (comparable to SHA-384 / AES-192 in security robustness).</p>
+                    <div class="spec-grid">
+                        <div class="spec-item"><span class="spec-name">Public Key size</span> <span class="spec-val">1,952 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Secret Key size</span> <span class="spec-val">2,912 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Signature size</span> <span class="spec-val">6,688 B</span></div>
+                    </div>
+                </div>
+
+                <div class="cards-grid">
+                    <!-- Key Gen -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">1</span>
+                            <h2>Key Generation</h2>
+                        </div>
+                        <p class="card-desc">Generate an ML-DSA-65 public and secret key pair.</p>
+                        <button id="dsa-keygen-btn" class="btn btn-primary full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                            Generate Key Pair
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="dsa-pk-out">Public Key (pk)</label>
+                                <button class="copy-btn" data-target="dsa-pk-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="dsa-pk-out" class="mono-text" readonly placeholder="Generated public key..."></textarea>
+                        </div>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="dsa-sk-out">Secret Key (sk)</label>
+                                <button class="copy-btn" data-target="dsa-sk-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="dsa-sk-out" class="mono-text" readonly placeholder="Generated secret key..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Sign -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">2</span>
+                            <h2>Sign Message</h2>
+                        </div>
+                        <p class="card-desc">Sign a textual message using your secret key.</p>
+                        
+                        <div class="input-group">
+                            <label for="dsa-sk-sign">Secret Key (sk)</label>
+                            <textarea id="dsa-sk-sign" class="mono-text" placeholder="Paste 2,912 byte secret key here..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="dsa-msg-sign">Message</label>
+                            <textarea id="dsa-msg-sign" placeholder="Enter message to sign..."></textarea>
+                        </div>
+
+                        <button id="dsa-sign-btn" class="btn btn-secondary full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                            Generate Signature
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="dsa-sig-out">Signature</label>
+                                <button class="copy-btn" data-target="dsa-sig-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="dsa-sig-out" class="mono-text" readonly placeholder="Generated signature..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Verify -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">3</span>
+                            <h2>Verify Signature</h2>
+                        </div>
+                        <p class="card-desc">Verify a signature against the original message and public key.</p>
+                        
+                        <div class="input-group">
+                            <label for="dsa-pk-verify">Public Key (pk)</label>
+                            <textarea id="dsa-pk-verify" class="mono-text" placeholder="Paste 1,952 byte public key here..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="dsa-msg-verify">Message</label>
+                            <textarea id="dsa-msg-verify" placeholder="Enter original message..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="dsa-sig-verify">Signature</label>
+                            <textarea id="dsa-sig-verify" class="mono-text" placeholder="Paste 6,688 byte signature here..."></textarea>
+                        </div>
+
+                        <button id="dsa-verify-btn" class="btn btn-accent full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            Verify Signature
+                        </button>
+                        
+                        <div id="dsa-verify-status" class="verify-status hidden">
+                            <span class="status-icon"></span>
+                            <span class="status-text">Verification Pending</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= SLH-DSA-SHA2-128s ================= -->
+            <section id="slh-dsa-sha2-128s" class="tab-panel" role="tabpanel">
+                <div class="info-card">
+                    <div class="info-header">
+                        <svg class="info-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        <h3>SLH-DSA-SHA2-128s (Stateless Hash-Based Digital Signature)</h3>
+                    </div>
+                    <p>Standardized in FIPS 205. SLH-DSA (SPHINCS+) is a stateless hash-based digital signature scheme. The "SHA2-128s" parameter set targets NIST security level 1 (equivalent to AES-128) optimized for small signatures.</p>
+                    <div class="spec-grid">
+                        <div class="spec-item"><span class="spec-name">Public Key size</span> <span class="spec-val">32 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Secret Key size</span> <span class="spec-val">64 B</span></div>
+                        <div class="spec-item"><span class="spec-name">Signature size</span> <span class="spec-val">7,836 B</span></div>
+                    </div>
+                    <div class="info-help-banner">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span>Note: Hash-based signature operations (especially signing) are highly CPU-intensive and may take a few seconds to complete.</span>
+                    </div>
+                </div>
+
+                <div class="cards-grid">
+                    <!-- Key Gen -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">1</span>
+                            <h2>Key Generation</h2>
+                        </div>
+                        <p class="card-desc">Generate an SLH-DSA-SHA2-128s public and secret key pair.</p>
+                        <button id="slh-keygen-btn" class="btn btn-primary full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                            Generate Key Pair
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="slh-pk-out">Public Key (pk)</label>
+                                <button class="copy-btn" data-target="slh-pk-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="slh-pk-out" class="mono-text" readonly placeholder="Generated public key..."></textarea>
+                        </div>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="slh-sk-out">Secret Key (sk)</label>
+                                <button class="copy-btn" data-target="slh-sk-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="slh-sk-out" class="mono-text" readonly placeholder="Generated secret key..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Sign -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">2</span>
+                            <h2>Sign Message</h2>
+                        </div>
+                        <p class="card-desc">Sign a textual message using your secret key.</p>
+                        
+                        <div class="input-group">
+                            <label for="slh-sk-sign">Secret Key (sk)</label>
+                            <textarea id="slh-sk-sign" class="mono-text" placeholder="Paste 64 byte secret key here..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="slh-msg-sign">Message</label>
+                            <textarea id="slh-msg-sign" placeholder="Enter message to sign..."></textarea>
+                        </div>
+
+                        <button id="slh-sign-btn" class="btn btn-secondary full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                            Generate Signature
+                        </button>
+                        
+                        <div class="input-group">
+                            <div class="input-header">
+                                <label for="slh-sig-out">Signature</label>
+                                <button class="copy-btn" data-target="slh-sig-out" title="Copy to clipboard">
+                                    <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                            <textarea id="slh-sig-out" class="mono-text" readonly placeholder="Generated signature..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Verify -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <span class="step-num">3</span>
+                            <h2>Verify Signature</h2>
+                        </div>
+                        <p class="card-desc">Verify a signature against the original message and public key.</p>
+                        
+                        <div class="input-group">
+                            <label for="slh-pk-verify">Public Key (pk)</label>
+                            <textarea id="slh-pk-verify" class="mono-text" placeholder="Paste 32 byte public key here..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="slh-msg-verify">Message</label>
+                            <textarea id="slh-msg-verify" placeholder="Enter original message..."></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="slh-sig-verify">Signature</label>
+                            <textarea id="slh-sig-verify" class="mono-text" placeholder="Paste 7,836 byte signature here..."></textarea>
+                        </div>
+
+                        <button id="slh-verify-btn" class="btn btn-accent full-width">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            Verify Signature
+                        </button>
+                        
+                        <div id="slh-verify-status" class="verify-status hidden">
+                            <span class="status-icon"></span>
+                            <span class="status-text">Verification Pending</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer-info">
+            <p>Built with Rust, WebAssembly (wasm-bindgen), and modern vanilla CSS grid/flex layouts.</p>
+        </footer>
+    </div>
+
+    <!-- ES Module Client Script -->
+    <script type="module" src="index.js"></script>
+</body>
+</html>

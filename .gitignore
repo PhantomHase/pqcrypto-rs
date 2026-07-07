@@ -26,3 +26,16 @@ criterion/
 # Coverage
 lcov.info
 tarpaulin-report.html
+
+# Local agent workspaces
+.agents/
+/explorer_m1_3/
+/target_temp/
+
+# WASM build artifacts
+/pqcrypto-wasm/pkg/
+/pqcrypto-wasm/target/
+
+# mdBook build output
+/book/book/
+

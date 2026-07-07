@@ -1,0 +1,6 @@
+[book]
+authors = ["PhantomHase"]
+language = "en"
+src = "src"
+title = "PQCrypto-RS Documentation"
+

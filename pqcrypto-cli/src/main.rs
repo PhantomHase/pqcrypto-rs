@@ -105,13 +105,22 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Keygen { kem: use_kem, sign: use_sign, out } => {
+        Commands::Keygen {
+            kem: use_kem,
+            sign: use_sign,
+            out,
+        } => {
             cmd_keygen(use_kem, use_sign, &out)?;
         }
         Commands::KemEncrypt { pk, message, out } => {
             cmd_kem_encrypt(&pk, &message, out.as_deref())?;
         }
-        Commands::KemDecrypt { sk, ct, ciphertext, out } => {
+        Commands::KemDecrypt {
+            sk,
+            ct,
+            ciphertext,
+            out,
+        } => {
             cmd_kem_decrypt(&sk, &ct, &ciphertext, out.as_deref())?;
         }
         Commands::Sign { sk, message, out } => {
@@ -140,10 +149,8 @@ fn cmd_keygen(use_kem: bool, use_sign: bool, out_dir: &PathBuf) -> Result<()> {
         let pk_path = out_dir.join("kem_public.key");
         let sk_path = out_dir.join("kem_secret.key");
 
-        std::fs::write(&pk_path, pk.to_bytes())
-            .context("Failed to write public key")?;
-        std::fs::write(&sk_path, sk.to_bytes())
-            .context("Failed to write secret key")?;
+        std::fs::write(&pk_path, pk.to_bytes()).context("Failed to write public key")?;
+        std::fs::write(&sk_path, sk.to_bytes()).context("Failed to write secret key")?;
 
         println!("  Public key: {}", pk_path.display());
         println!("  Secret key: {}", sk_path.display());
@@ -158,10 +165,8 @@ fn cmd_keygen(use_kem: bool, use_sign: bool, out_dir: &PathBuf) -> Result<()> {
         let pk_path = out_dir.join("sign_public.key");
         let sk_path = out_dir.join("sign_secret.key");
 
-        std::fs::write(&pk_path, pk.to_bytes())
-            .context("Failed to write public key")?;
-        std::fs::write(&sk_path, sk.to_bytes())
-            .context("Failed to write secret key")?;
+        std::fs::write(&pk_path, pk.to_bytes()).context("Failed to write public key")?;
+        std::fs::write(&sk_path, sk.to_bytes()).context("Failed to write secret key")?;
 
         println!("  Public key: {}", pk_path.display());
         println!("  Secret key: {}", sk_path.display());
@@ -174,20 +179,20 @@ fn cmd_keygen(use_kem: bool, use_sign: bool, out_dir: &PathBuf) -> Result<()> {
 }
 
 /// Encrypt a message using hybrid encryption.
-fn cmd_kem_encrypt(pk_path: &PathBuf, message_path: &PathBuf, out_path: Option<&std::path::Path>) -> Result<()> {
+fn cmd_kem_encrypt(
+    pk_path: &PathBuf,
+    message_path: &PathBuf,
+    out_path: Option<&std::path::Path>,
+) -> Result<()> {
     println!("Loading public key...");
-    let pk_bytes = std::fs::read(pk_path)
-        .context("Failed to read public key file")?;
-    let pk = kem::MlKem768PublicKey::from_bytes(&pk_bytes)
-        .context("Invalid public key format")?;
+    let pk_bytes = std::fs::read(pk_path).context("Failed to read public key file")?;
+    let pk = kem::MlKem768PublicKey::from_bytes(&pk_bytes).context("Invalid public key format")?;
 
     println!("Reading message...");
-    let message = std::fs::read(message_path)
-        .context("Failed to read message file")?;
+    let message = std::fs::read(message_path).context("Failed to read message file")?;
 
     println!("Encrypting with ML-KEM + AES-256-GCM...");
-    let (ciphertext, ct) = kem::hybrid_encrypt(&pk, &message, b"")
-        .context("Encryption failed")?;
+    let (ciphertext, ct) = kem::hybrid_encrypt(&pk, &message, b"").context("Encryption failed")?;
 
     // Output: ct (KEM ciphertext) || encrypted message
     let mut output = Vec::new();
@@ -196,8 +201,7 @@ fn cmd_kem_encrypt(pk_path: &PathBuf, message_path: &PathBuf, out_path: Option<&
 
     let default_path = PathBuf::from("encrypted.bin");
     let out_path = out_path.unwrap_or(&default_path);
-    std::fs::write(out_path, &output)
-        .context("Failed to write encrypted file")?;
+    std::fs::write(out_path, &output).context("Failed to write encrypted file")?;
 
     println!("  KEM ciphertext: {} bytes", ct.as_bytes().len());
     println!("  Encrypted message: {} bytes", ciphertext.len());
@@ -208,33 +212,34 @@ fn cmd_kem_encrypt(pk_path: &PathBuf, message_path: &PathBuf, out_path: Option<&
 }
 
 /// Decrypt a message.
-fn cmd_kem_decrypt(sk_path: &PathBuf, ct_path: &PathBuf, ciphertext_path: &PathBuf, out_path: Option<&std::path::Path>) -> Result<()> {
+fn cmd_kem_decrypt(
+    sk_path: &PathBuf,
+    ct_path: &PathBuf,
+    ciphertext_path: &PathBuf,
+    out_path: Option<&std::path::Path>,
+) -> Result<()> {
     println!("Loading secret key...");
-    let sk_bytes = std::fs::read(sk_path)
-        .context("Failed to read secret key file")?;
-    let sk = kem::MlKem768SecretKey::from_bytes(&sk_bytes)
-        .context("Invalid secret key format")?;
+    let sk_bytes = std::fs::read(sk_path).context("Failed to read secret key file")?;
+    let sk = kem::MlKem768SecretKey::from_bytes(&sk_bytes).context("Invalid secret key format")?;
 
     println!("Loading KEM ciphertext...");
-    let ct_bytes = std::fs::read(ct_path)
-        .context("Failed to read ciphertext file")?;
+    let ct_bytes = std::fs::read(ct_path).context("Failed to read ciphertext file")?;
     let ct = kem::MlKem768Ciphertext::from_bytes(
-        &ct_bytes[..pqcrypto_kem::CT_LEN].try_into()
-            .context("Invalid ciphertext length")?
+        &ct_bytes[..pqcrypto_kem::CT_LEN]
+            .try_into()
+            .context("Invalid ciphertext length")?,
     );
 
     println!("Loading encrypted message...");
-    let ciphertext = std::fs::read(ciphertext_path)
-        .context("Failed to read encrypted message file")?;
+    let ciphertext =
+        std::fs::read(ciphertext_path).context("Failed to read encrypted message file")?;
 
     println!("Decrypting...");
-    let plaintext = kem::hybrid_decrypt(&sk, &ct, &ciphertext, b"")
-        .context("Decryption failed")?;
+    let plaintext = kem::hybrid_decrypt(&sk, &ct, &ciphertext, b"").context("Decryption failed")?;
 
     let default_path = PathBuf::from("decrypted.bin");
     let out_path = out_path.unwrap_or(&default_path);
-    std::fs::write(out_path, &plaintext)
-        .context("Failed to write decrypted file")?;
+    std::fs::write(out_path, &plaintext).context("Failed to write decrypted file")?;
 
     println!("  Decrypted message: {} bytes", plaintext.len());
     println!("  Output: {}", out_path.display());
@@ -244,28 +249,26 @@ fn cmd_kem_decrypt(sk_path: &PathBuf, ct_path: &PathBuf, ciphertext_path: &PathB
 }
 
 /// Sign a message.
-fn cmd_sign(sk_path: &PathBuf, message_path: &PathBuf, out_path: Option<&std::path::Path>) -> Result<()> {
+fn cmd_sign(
+    sk_path: &PathBuf,
+    message_path: &PathBuf,
+    out_path: Option<&std::path::Path>,
+) -> Result<()> {
     println!("Loading secret key...");
-    let sk_bytes = std::fs::read(sk_path)
-        .context("Failed to read secret key file")?;
-    // Note: Full deserialization not implemented in API yet
-    // For now, create a placeholder
+    let sk_bytes = std::fs::read(sk_path).context("Failed to read secret key file")?;
     println!("  Secret key loaded ({} bytes)", sk_bytes.len());
 
     println!("Reading message...");
-    let message = std::fs::read(message_path)
-        .context("Failed to read message file")?;
+    let message = std::fs::read(message_path).context("Failed to read message file")?;
 
-    // For now, generate a new key and sign (placeholder)
-    let (_, sk) = sign::keygen();
+    let sk = sign::MlDsa65SecretKey::from_bytes(&sk_bytes).context("Invalid secret key format")?;
 
     println!("Signing with ML-DSA-65...");
     let sig = sign::sign(&sk, &message);
 
     let default_path = PathBuf::from("signature.bin");
     let out_path = out_path.unwrap_or(&default_path);
-    std::fs::write(out_path, sig.to_bytes())
-        .context("Failed to write signature file")?;
+    std::fs::write(out_path, sig.to_bytes()).context("Failed to write signature file")?;
 
     println!("  Signature: {} bytes", sig.to_bytes().len());
     println!("  Output: {}", out_path.display());
@@ -277,20 +280,15 @@ fn cmd_sign(sk_path: &PathBuf, message_path: &PathBuf, out_path: Option<&std::pa
 /// Verify a signature.
 fn cmd_verify(pk_path: &PathBuf, message_path: &PathBuf, sig_path: &PathBuf) -> Result<()> {
     println!("Loading public key...");
-    let pk_bytes = std::fs::read(pk_path)
-        .context("Failed to read public key file")?;
-    let pk = sign::MlDsa65PublicKey::from_bytes(&pk_bytes)
-        .context("Invalid public key format")?;
+    let pk_bytes = std::fs::read(pk_path).context("Failed to read public key file")?;
+    let pk = sign::MlDsa65PublicKey::from_bytes(&pk_bytes).context("Invalid public key format")?;
 
     println!("Reading message...");
-    let message = std::fs::read(message_path)
-        .context("Failed to read message file")?;
+    let message = std::fs::read(message_path).context("Failed to read message file")?;
 
     println!("Loading signature...");
-    let sig_bytes = std::fs::read(sig_path)
-        .context("Failed to read signature file")?;
-    let sig = sign::MlDsa65Signature::from_bytes(&sig_bytes)
-        .context("Invalid signature format")?;
+    let sig_bytes = std::fs::read(sig_path).context("Failed to read signature file")?;
+    let sig = sign::MlDsa65Signature::from_bytes(&sig_bytes).context("Invalid signature format")?;
 
     println!("Verifying ML-DSA-65 signature...");
     let valid = sign::verify(&pk, &message, &sig);

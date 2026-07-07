@@ -2,8 +2,9 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0%20/MIT-blue.svg)](LICENSE-APACHE)
 [![Rust](https://img.shields.io/badge/rust-2021-edition.svg)](https://www.rust-lang.org/)
-[![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20204-green.svg)](https://csrc.nist.gov/projects/post-quantum-cryptography)
-[![Tests](https://img.shields.io/badge/tests-74%20passed-brightgreen.svg)](#testing)
+[![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20204%20%7C%20205-green.svg)](https://csrc.nist.gov/projects/post-quantum-cryptography)
+[![Tests](https://img.shields.io/badge/tests-98%20passed-brightgreen.svg)](#testing)
+
 
 **Post-Quantum Cryptography library in Rust** — pure Rust implementation of NIST-standardized post-quantum algorithms.
 
@@ -140,18 +141,27 @@ pqcrypto-rs/
 │       ├── encaps.rs       # Encapsulation + CPAPKE encrypt
 │       ├── decaps.rs       # Decapsulation + CPAPKE decrypt + FO transform
 │       └── api.rs          # Public API + hybrid encryption
-├── pqcrypto-sign/          # ML-DSA-65 & SLH-DSA
+├── pqcrypto-sign/          # ML-DSA-65 & SLH-DSA (FIPS 204 & 205)
 │   └── src/
 │       ├── lib.rs          # Constants, error types
 │       ├── ml_dsa.rs       # ML-DSA (Dilithium) — keygen, sign, verify
 │       ├── slh_dsa.rs      # SLH-DSA (SPHINCS+)
 │       └── api.rs          # Public API
+├── pqcrypto-wasm/          # WebAssembly bindings (wasm-bindgen)
+│   └── src/
+│       └── lib.rs          # Facade and wrappers for browser runtime
 ├── pqcrypto-cli/           # CLI tool
 │   ├── src/main.rs
 │   └── examples/basic_usage.rs
+├── playground/             # Interactive browser-based cryptographic playground
+│   ├── index.html
+│   ├── style.css
+│   └── index.js
+├── book/                   # mdBook-based documentation site
 ├── benches/poly_bench.rs   # Criterion benchmarks
 ├── tests/                  # Integration tests
 └── Cargo.toml              # Workspace definition
+
 ```
 
 ## Security Properties
@@ -206,13 +216,14 @@ pqcrypto-rs/
 ## Testing
 
 ```bash
-# Run all tests (87 tests across all crates)
+# Run all tests (98 tests across all crates)
 cargo test --workspace
 
 # Run specific crate tests
-cargo test -p pqcrypto-core    # 31 tests
+cargo test -p pqcrypto-core    # 33 tests
 cargo test -p pqcrypto-kem     # 17 tests
-cargo test -p pqcrypto-sign    # 35 tests (ML-DSA + SLH-DSA)
+cargo test -p pqcrypto-sign    # 38 tests (ML-DSA + SLH-DSA)
+cargo test -p pqcrypto-wasm    # 9 tests
 
 # Run with output
 cargo test --workspace -- --nocapture
@@ -225,14 +236,16 @@ cargo bench
 
 | Crate | Tests | Status |
 |-------|-------|--------|
-| pqcrypto-core | 31 | ✅ All pass |
+| pqcrypto-core | 33 | ✅ All pass |
 | pqcrypto-kem | 17 | ✅ All pass |
-| pqcrypto-sign | 35 | ✅ All pass |
+| pqcrypto-sign | 38 | ✅ All pass |
+| pqcrypto-wasm | 9 | ✅ All pass |
 | pqcrypto-cli | 1 | ✅ Pass |
 | Doc tests | 3 | ✅ Pass |
-| **Total** | **87 passed, 0 failed, 0 ignored** | **✅ 10x verified** |
+| **Total** | **101 passed, 0 failed, 0 ignored** | **✅ 10x verified** |
 
 > All tests verified 10 times consecutively with consistent results (zero flaky tests).
+
 > SLH-DSA sign/verify round-trip now fully works (WOTS+, XMSS, FORS, Hypertree with correct Merkle root computation).
 
 ## Known Limitations
@@ -249,7 +262,8 @@ cargo bench
 - [x] Phase 2: ML-DSA-65 — sign, verify (FIPS 204), 24 tests pass, constant-time operations
 - [x] Phase 3: Integration & CLI — pqcrypto-cli (keygen, kem-encrypt, kem-decrypt, sign, verify), hybrid encryption (ML-KEM + AES-256-GCM), JSON/Base64 serialization
 - [x] Phase 4: SLH-DSA — FIPS 205 (SPHINCS+) with WOTS+, XMSS, FORS, Hypertree — sign/verify fully working, 10x verified
-- [ ] Phase 5: WASM, Finalization — wasm-pack + browser demo, rustdoc + mdBook, additional validation, contributing guide
+- [x] Phase 5: WASM, Finalization — wasm-pack + browser demo, rustdoc + mdBook, additional validation, contributing guide
+
 
 ## Building
 
