@@ -374,16 +374,21 @@ fn sample_gamma1(seed: &[u8], nonce: u16) -> MlDsaPoly {
     let mut reader = hasher.finalize_xof();
 
     let mut poly = MlDsaPoly::zero();
-    let mut byte_buf = vec![0u8; N * 3];
-    reader.read(&mut byte_buf);
+    let mut buf = [0u8; 640];
+    reader.read(&mut buf);
 
-    for i in 0..N {
-        // Sample from [-γ₁, γ₁] using 3 bytes per coefficient
-        let val = (byte_buf[3 * i] as u32)
-            | ((byte_buf[3 * i + 1] as u32) << 8)
-            | ((byte_buf[3 * i + 2] as u32) << 16);
-        let val = val % (2 * GAMMA1 + 1);
-        poly.coeffs[i] = val as i32 - GAMMA1 as i32;
+    for i in 0..128 {
+        let b0 = buf[5 * i] as u32;
+        let b1 = buf[5 * i + 1] as u32;
+        let b2 = buf[5 * i + 2] as u32;
+        let b3 = buf[5 * i + 3] as u32;
+        let b4 = buf[5 * i + 4] as u32;
+
+        let v0 = b0 | (b1 << 8) | ((b2 & 0x0F) << 16);
+        let v1 = (b2 >> 4) | (b3 << 4) | (b4 << 12);
+
+        poly.coeffs[2 * i] = (GAMMA1 as i32) - (v0 as i32);
+        poly.coeffs[2 * i + 1] = (GAMMA1 as i32) - (v1 as i32);
     }
 
     poly
@@ -402,14 +407,21 @@ fn sample_matrix_a(seed: &[u8]) -> PolyMatrix {
             let mut hasher = Shake128::default();
             Update::update(&mut hasher, &input);
             let mut reader = hasher.finalize_xof();
-            let mut bytes = vec![0u8; N * 3];
-            reader.read(&mut bytes);
 
-            for k in 0..N {
-                let val = (bytes[3 * k] as u32)
-                    | ((bytes[3 * k + 1] as u32) << 8)
-                    | ((bytes[3 * k + 2] as u32) << 16);
-                matrix.rows[i].polys[j].coeffs[k] = (val % Q) as i32;
+            let mut ctr = 0;
+            let mut buf = [0u8; 3];
+
+            while ctr < N {
+                reader.read(&mut buf);
+                let b0 = buf[0] as u32;
+                let b1 = buf[1] as u32;
+                let b2 = buf[2] as u32;
+
+                let val = b0 | (b1 << 8) | ((b2 & 0x7F) << 16);
+                if val < Q as u32 {
+                    matrix.rows[i].polys[j].coeffs[ctr] = val as i32;
+                    ctr += 1;
+                }
             }
         }
     }
@@ -429,44 +441,37 @@ fn sample_in_ball(seed: &[u8]) -> MlDsaPoly {
     // Generate 8 bytes for the sign bits
     let mut sign_bytes = [0u8; 8];
     reader.read(&mut sign_bytes);
+    let mut signs = u64::from_le_bytes(sign_bytes);
 
-    // Generate bytes for position selection
-    let mut pos_bytes = vec![0u8; TAU * 2];
-    reader.read(&mut pos_bytes);
-
-    // Fisher-Yates shuffle to select τ positions
-    let mut positions = Vec::with_capacity(TAU);
-    let mut available: Vec<usize> = (0..N).collect();
-
-    for i in 0..TAU {
-        // Use rejection sampling to get uniform random index
-        let mut idx = 0;
-        let mut byte_idx = i * 2;
+    let mut buf = [0u8; 1];
+    for i in (256 - TAU)..256 {
         loop {
-            let val = pos_bytes[byte_idx] as usize;
-            byte_idx += 1;
-            if val < N - i {
-                idx = val;
-                break;
-            }
-            if byte_idx >= pos_bytes.len() {
-                // Fallback: use modular reduction
-                idx = (pos_bytes[i * 2] as usize + pos_bytes[i * 2 + 1] as usize * 256) % (N - i);
+            reader.read(&mut buf);
+            let b = buf[0] as usize;
+            if b <= i {
+                poly.coeffs[i] = poly.coeffs[b];
+                if (signs & 1) == 0 {
+                    poly.coeffs[b] = 1;
+                } else {
+                    poly.coeffs[b] = -1;
+                }
+                signs >>= 1;
                 break;
             }
         }
-
-        positions.push(available[idx]);
-        available.swap(idx, N - i - 1);
-    }
-
-    // Assign ±1 signs
-    for (i, &pos) in positions.iter().enumerate() {
-        let bit = (sign_bytes[i / 8] >> (i % 8)) & 1;
-        poly.coeffs[pos] = if bit == 1 { 1 } else { -1 };
     }
 
     poly
+}
+
+/// H_384: Hash function (SHAKE-256 outputting 48 bytes).
+fn h384(input: &[u8]) -> [u8; 48] {
+    let mut hasher = Shake256::default();
+    Update::update(&mut hasher, input);
+    let mut reader = hasher.finalize_xof();
+    let mut out = [0u8; 48];
+    reader.read(&mut out);
+    out
 }
 
 /// H: Hash function (SHA3-512).
@@ -601,7 +606,7 @@ pub fn decode_sk(bytes: &[u8]) -> Result<MlDsaSecretKey, SignError> {
 #[derive(Clone, Debug)]
 pub struct MlDsaSignature {
     /// c~: challenge hash
-    pub c_tilde: [u8; SEED_LEN],
+    pub c_tilde: [u8; 48],
     /// z: response vector
     pub z: PolyVec,
     /// h: hint vector
@@ -773,7 +778,7 @@ pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) 
                 c_input.extend_from_slice(&(c as u16).to_le_bytes());
             }
         }
-        let c_tilde = h256(&c_input);
+        let c_tilde = h384(&c_input);
 
         // Step 10: c = SampleInBall(c~)
         let c = sample_in_ball(&c_tilde);
@@ -821,7 +826,7 @@ pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) 
     // If we reach here, signing failed after max iterations
     // Return a dummy signature (this should not happen in practice)
     MlDsaSignature {
-        c_tilde: [0u8; SEED_LEN],
+        c_tilde: [0u8; 48],
         z: PolyVec::new(L),
         h: PolyVec::new(K),
     }
@@ -948,7 +953,7 @@ pub fn verify(pk: &MlDsaPublicKey, message: &[u8], sig: &MlDsaSignature) -> bool
             c_input.extend_from_slice(&(coeff as u16).to_le_bytes());
         }
     }
-    let c_prime = h256(&c_input);
+    let c_prime = h384(&c_input);
     c_prime == sig.c_tilde
 }
 

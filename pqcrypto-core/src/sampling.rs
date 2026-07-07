@@ -81,14 +81,24 @@ pub fn sample_uniform(bytes: &[u8]) -> Poly {
     let mut coeff_idx = 0;
     let mut byte_idx = 0;
 
-    while coeff_idx < N && byte_idx + 2 <= bytes.len() {
-        // Read two bytes as a little-endian u16
-        let val = u16::from_le_bytes([bytes[byte_idx], bytes[byte_idx + 1]]);
-        byte_idx += 2;
+    while coeff_idx < N && byte_idx + 3 <= bytes.len() {
+        let b0 = bytes[byte_idx] as u16;
+        let b1 = bytes[byte_idx + 1] as u16;
+        let b2 = bytes[byte_idx + 2] as u16;
+        byte_idx += 3;
 
-        // Reject if val >= q (rejection sampling for uniform distribution)
-        if val < Q {
-            poly.coeffs[coeff_idx] = val;
+        let d1 = b0 | ((b1 & 0x0F) << 8);
+        let d2 = (b1 >> 4) | (b2 << 4);
+
+        if d1 < Q {
+            poly.coeffs[coeff_idx] = d1;
+            coeff_idx += 1;
+            if coeff_idx >= N {
+                break;
+            }
+        }
+        if d2 < Q {
+            poly.coeffs[coeff_idx] = d2;
             coeff_idx += 1;
         }
     }
@@ -96,25 +106,45 @@ pub fn sample_uniform(bytes: &[u8]) -> Poly {
     poly
 }
 
-/// Sample a polynomial from a uniform distribution using the "samplePolyCBD"
-/// method with seed expansion via SHAKE-128.
-///
-/// This is the optimized version used in ML-KEM that generates pseudorandom
-/// bytes from a seed using SHAKE-128, then samples from the uniform distribution.
-pub fn sample_uniform_from_seed(seed: &[u8; 32]) -> Poly {
+pub fn sample_ntt(seed_input: &[u8]) -> Poly {
     use sha3::digest::{ExtendableOutput, Update, XofReader};
     use sha3::Shake128;
 
-    // Generate enough pseudorandom bytes for rejection sampling
-    // We need about 2 * N * ceil(log2(q)) / 8 = 2 * 256 * 12 / 8 = 768 bytes
-    // But rejection rate is low, so 1024 bytes should be sufficient
     let mut hasher = Shake128::default();
-    Update::update(&mut hasher, seed);
+    Update::update(&mut hasher, seed_input);
     let mut reader = hasher.finalize_xof();
-    let mut bytes = vec![0u8; 1024];
-    reader.read(&mut bytes);
 
-    sample_uniform(&bytes)
+    let mut poly = Poly::zero();
+    let mut coeff_idx = 0;
+    let mut buf = [0u8; 3];
+
+    while coeff_idx < N {
+        reader.read(&mut buf);
+        let b0 = buf[0] as u16;
+        let b1 = buf[1] as u16;
+        let b2 = buf[2] as u16;
+
+        let d1 = b0 | ((b1 & 0x0F) << 8);
+        let d2 = (b1 >> 4) | (b2 << 4);
+
+        if d1 < Q {
+            poly.coeffs[coeff_idx] = d1;
+            coeff_idx += 1;
+            if coeff_idx >= N {
+                break;
+            }
+        }
+        if d2 < Q {
+            poly.coeffs[coeff_idx] = d2;
+            coeff_idx += 1;
+        }
+    }
+
+    poly
+}
+
+pub fn sample_uniform_from_seed(seed: &[u8; 32]) -> Poly {
+    sample_ntt(seed)
 }
 
 #[cfg(test)]

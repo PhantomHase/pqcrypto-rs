@@ -165,9 +165,7 @@ fn generate_matrix_a_transpose(rho: &[u8; SEED_LEN]) -> Vec<Vec<Poly>> {
             seed_input.push(i as u8);
             seed_input.push(j as u8);
 
-            let bytes = shake128_xof(&seed_input, 1024);
-            a_hat_t[i][j] = sample_uniform(&bytes);
-            ntt_forward(&mut a_hat_t[i][j]);
+            a_hat_t[i][j] = pqcrypto_core::sampling::sample_ntt(&seed_input);
         }
     }
 

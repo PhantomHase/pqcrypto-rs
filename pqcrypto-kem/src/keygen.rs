@@ -16,7 +16,7 @@ use pqcrypto_core::ntt::{ntt_forward, ntt_inverse, ntt_pointwise};
 use pqcrypto_core::poly::Poly;
 use pqcrypto_core::sampling::{sample_cbd, sample_cbd_vec, sample_uniform};
 use pqcrypto_core::sym::g;
-use pqcrypto_core::N;
+use pqcrypto_core::{N, Q};
 
 use crate::{ETA1, K, PK_LEN, SEED_LEN, SK_LEN};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -43,14 +43,19 @@ pub struct SecretKey {
     pub pk: PublicKey,
 }
 
+impl zeroize::Zeroize for SecretKey {
+    fn zeroize(&mut self) {
+        for p in &mut self.s_hat {
+            p.zeroize();
+        }
+        self.pk_hash.zeroize();
+        self.z.zeroize();
+    }
+}
+
 impl Drop for SecretKey {
     fn drop(&mut self) {
-        // Zeroize all sensitive key material
-        for p in &mut self.s_hat {
-            p.coeffs.iter_mut().for_each(|c| *c = 0);
-        }
-        self.pk_hash.iter_mut().for_each(|b| *b = 0);
-        self.z.iter_mut().for_each(|b| *b = 0);
+        self.zeroize();
     }
 }
 
@@ -70,10 +75,7 @@ fn generate_matrix_a(rho: &[u8; SEED_LEN]) -> Vec<Vec<Poly>> {
             seed_input.push(j as u8);
             seed_input.push(i as u8);
 
-            // Sample polynomial from uniform distribution using SHAKE-128
-            let bytes = pqcrypto_core::sym::shake128_xof(&seed_input, 1024);
-            a_hat[i][j] = sample_uniform(&bytes);
-            ntt_forward(&mut a_hat[i][j]);
+            a_hat[i][j] = pqcrypto_core::sampling::sample_ntt(&seed_input);
         }
     }
 
@@ -198,9 +200,9 @@ pub fn encode_pk(pk: &PublicKey) -> Vec<u8> {
 
 /// Decode public key from bytes.
 pub fn decode_pk(bytes: &[u8]) -> Result<PublicKey, crate::KemError> {
-    if bytes.len() < PK_LEN {
+    if bytes.len() != PK_LEN {
         return Err(crate::KemError::SerializationError(
-            "Public key too short".into(),
+            format!("Invalid public key length: expected {}, got {}", PK_LEN, bytes.len()),
         ));
     }
 
@@ -218,7 +220,13 @@ pub fn decode_pk(bytes: &[u8]) -> Result<PublicKey, crate::KemError> {
             offset += 1;
             bits += 8;
             while bits >= 12 && coeff_idx < N {
-                coeffs[coeff_idx] = (acc & 0xFFF) as u16;
+                let coeff = (acc & 0xFFF) as u16;
+                if coeff >= Q {
+                    return Err(crate::KemError::SerializationError(
+                        "Coefficient >= q in public key".into(),
+                    ));
+                }
+                coeffs[coeff_idx] = coeff;
                 acc >>= 12;
                 bits -= 12;
                 coeff_idx += 1;
@@ -264,9 +272,9 @@ pub fn encode_sk(sk: &SecretKey) -> Vec<u8> {
 
 /// Decode secret key from bytes.
 pub fn decode_sk(bytes: &[u8]) -> Result<SecretKey, crate::KemError> {
-    if bytes.len() < SK_LEN {
+    if bytes.len() != SK_LEN {
         return Err(crate::KemError::SerializationError(
-            "Secret key too short".into(),
+            format!("Invalid secret key length: expected {}, got {}", SK_LEN, bytes.len()),
         ));
     }
 
@@ -284,7 +292,13 @@ pub fn decode_sk(bytes: &[u8]) -> Result<SecretKey, crate::KemError> {
             offset += 1;
             bits += 8;
             while bits >= 12 && coeff_idx < N {
-                coeffs[coeff_idx] = (acc & 0xFFF) as u16;
+                let coeff = (acc & 0xFFF) as u16;
+                if coeff >= Q {
+                    return Err(crate::KemError::SerializationError(
+                        "Coefficient >= q in secret key".into(),
+                    ));
+                }
+                coeffs[coeff_idx] = coeff;
                 acc >>= 12;
                 bits -= 12;
                 coeff_idx += 1;

@@ -185,7 +185,7 @@ pub fn ml_dsa_65_verify(
     sig_hex_or_b64: &str,
 ) -> Result<bool, String> {
     let (pk_bytes, _pk_is_b64) = decode_input(pk_hex_or_b64, 1952)?;
-    let (sig_bytes, _sig_is_b64) = decode_input(sig_hex_or_b64, 6688)?;
+    let (sig_bytes, _sig_is_b64) = decode_input(sig_hex_or_b64, 6704)?;
     let pk = pqcrypto_sign::api::MlDsa65PublicKey::from_bytes(&pk_bytes)
         .map_err(|e| format!("Invalid public key: {}", e))?;
     let sig = pqcrypto_sign::api::MlDsa65Signature::from_bytes(&sig_bytes)
@@ -516,14 +516,14 @@ mod tests {
         assert!(ml_dsa_65_sign("0000", b"hello").is_err());
 
         // Test empty public key / signature
-        assert!(ml_dsa_65_verify("", b"hello", &hex::encode(vec![0u8; 6688])).is_err());
+        assert!(ml_dsa_65_verify("", b"hello", &hex::encode(vec![0u8; 6704])).is_err());
         assert!(ml_dsa_65_verify(&hex::encode(vec![0u8; 1952]), b"hello", "").is_err());
 
         // Test too short public key / signature
         assert!(ml_dsa_65_verify(
             &hex::encode(vec![0u8; 100]),
             b"hello",
-            &hex::encode(vec![0u8; 6688])
+            &hex::encode(vec![0u8; 6704])
         )
         .is_err());
         assert!(ml_dsa_65_verify(

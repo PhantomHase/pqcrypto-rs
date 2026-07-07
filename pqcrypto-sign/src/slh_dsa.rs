@@ -835,11 +835,15 @@ pub fn sign_internal(
     let leaf_idx = digest.leaf_idx;
 
     // Step 4: FORS sign
+    let mut fors_addr = make_addr(ADDR_TYPE_FORS);
+    set_tree(&mut fors_addr, tree_idx);
+    set_keypair(&mut fors_addr, leaf_idx);
+
     let fors_sig = fors_sign(
         &digest.fors_msg,
         &sk.sk_seed,
         &sk.pk_seed,
-        &make_addr(ADDR_TYPE_FORS),
+        &fors_addr,
     );
 
     // Step 5: Get FORS public key
@@ -847,7 +851,7 @@ pub fn sign_internal(
         &digest.fors_msg,
         &fors_sig,
         &sk.pk_seed,
-        &make_addr(ADDR_TYPE_FORS),
+        &fors_addr,
     );
 
     // Step 6: Hypertree sign
@@ -873,11 +877,15 @@ pub fn verify(pk: &SlhDsaPublicKey, message: &[u8], sig: &SlhDsaSignature) -> bo
     }
 
     // Step 2: Verify FORS signature to get FORS public key
+    let mut fors_addr = make_addr(ADDR_TYPE_FORS);
+    set_tree(&mut fors_addr, sig.tree_idx);
+    set_keypair(&mut fors_addr, sig.leaf_idx);
+
     let fors_pk = fors_verify(
         &digest.fors_msg,
         &sig.fors_sig,
         &pk.pk_seed,
-        &make_addr(ADDR_TYPE_FORS),
+        &fors_addr,
     );
 
     // Step 3: Verify hypertree signature

@@ -34,22 +34,23 @@ const BASE_CASE_GAMMAS: [i16; 128] = [
 
 #[inline]
 fn add_mod(a: u16, b: u16) -> u16 {
-    ((a as u32 + b as u32) % Q as u32) as u16
+    crate::reduce::barrett_reduce((a as i32) + (b as i32)) as u16
 }
 
 #[inline]
 fn sub_mod(a: u16, b: u16) -> u16 {
-    ((a as u32 + Q as u32 - b as u32) % Q as u32) as u16
+    crate::reduce::barrett_reduce((a as i32) - (b as i32) + (Q as i32)) as u16
 }
 
 #[inline]
 fn mul_mod(a: u16, b: u16) -> u16 {
-    ((a as u32 * b as u32) % Q as u32) as u16
+    crate::reduce::barrett_reduce((a as i32) * (b as i32)) as u16
 }
 
 #[inline]
 fn signed_mod_q(value: i16) -> u16 {
-    (value as i32).rem_euclid(Q as i32) as u16
+    let val = (value as i32) + (Q as i32);
+    crate::reduce::barrett_reduce(val) as u16
 }
 
 /// Multiply two polynomials in R_q = Z_q[X]/(X^256+1).

@@ -161,6 +161,12 @@ impl Poly {
     }
 }
 
+impl zeroize::Zeroize for Poly {
+    fn zeroize(&mut self) {
+        self.coeffs.zeroize();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

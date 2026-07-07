@@ -176,17 +176,17 @@ impl MlDsa65Signature {
 
     /// Deserialize from bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SignError> {
-        if bytes.len() != 6688 {
+        if bytes.len() != 6704 {
             return Err(SignError::SerializationError(format!(
-                "Invalid signature length: expected 6688, got {}",
+                "Invalid signature length: expected 6704, got {}",
                 bytes.len()
             )));
         }
 
-        let mut c_tilde = [0u8; SEED_LEN];
-        c_tilde.copy_from_slice(&bytes[..SEED_LEN]);
+        let mut c_tilde = [0u8; 48];
+        c_tilde.copy_from_slice(&bytes[..48]);
 
-        let mut offset = SEED_LEN;
+        let mut offset = 48;
 
         // Decode z
         let mut z = crate::ml_dsa::PolyVec::new(crate::ml_dsa_params::L);

@@ -24,8 +24,8 @@ fn test_ml_kem_768_kat() {
     let sk_bytes = sk.to_bytes();
 
     // Verify deterministic key output matches expected hashes
-    assert_hash_eq("ML-KEM-768 PK", &pk_bytes, "e2ea85ac92e61fe28dc0f022f7aca465242c6a9c43a44c15f01862491cbd5e3b");
-    assert_hash_eq("ML-KEM-768 SK", &sk_bytes, "19dc6f48c8f5bff40a841c6615750f413d5fb7fa3374a440995fa747db11d8b1");
+    assert_hash_eq("ML-KEM-768 PK", &pk_bytes, "605a1583f2f42c2622d4bb3714033272ba2528b8257fe30aeca1f7d2d88d4d8b");
+    assert_hash_eq("ML-KEM-768 SK", &sk_bytes, "367250dc206192f0109a2dc4674ec4e38eb0b8ff04caf9d0bfd9979c2512e204");
 
     // Verify keygen determinism (second run produces identical outputs)
     let (pk2, sk2) = pqcrypto_kem::api::keygen_internal(&d, &z);
@@ -37,8 +37,8 @@ fn test_ml_kem_768_kat() {
     let (ct, ss) = pqcrypto_kem::api::encapsulate_internal(&pk, &m).unwrap();
 
     // Verify encapsulation output matches expected hashes
-    assert_hash_eq("ML-KEM-768 CT", ct.as_bytes(), "70b6faff65cc74637944186b578bb98b1d089a6dff2200f148ff705035b0f58c");
-    assert_hash_eq("ML-KEM-768 SS", ss.as_bytes(), "54d1f1238d890e815112f20b91ad159b8b7f9e3a7557740be53efdc4e428e5ef");
+    assert_hash_eq("ML-KEM-768 CT", ct.as_bytes(), "a4c55e7793613283daf010b7263e7e1b00234f9edbdf37dabd1834a8e96ffbc0");
+    assert_hash_eq("ML-KEM-768 SS", ss.as_bytes(), "6f08ef3a9d5d06345f305fd408bc15afb1db48fb7de3aec4eda409db6cb858d6");
 
     // Verify encaps determinism
     let (ct2, ss2) = pqcrypto_kem::api::encapsulate_internal(&pk, &m).unwrap();
@@ -60,8 +60,8 @@ fn test_ml_dsa_65_kat() {
     let sk_bytes = sk.to_bytes();
 
     // Verify deterministic key output matches expected hashes
-    assert_hash_eq("ML-DSA-65 PK", &pk_bytes, "debd41f1daabc054518e6190fdf61ac4b179580201d6317ef0fbf5e71d652482");
-    assert_hash_eq("ML-DSA-65 SK", &sk_bytes, "f1ac4a792b15b6d8d100df735f3290c71133a0a7bf6756f1e4b0694aa4e7207c");
+    assert_hash_eq("ML-DSA-65 PK", &pk_bytes, "f3df70f1edfc742f683032980e37021752b5b5d73330e301853635bba6a0a905");
+    assert_hash_eq("ML-DSA-65 SK", &sk_bytes, "f4bcd787b8981fba4039dbc933023f2c842295ca3eb2ba7603bad8c580f08781");
 
     // Verify keygen determinism
     let (pk2, sk2) = pqcrypto_sign::api::keygen_internal(&zeta);
@@ -75,7 +75,7 @@ fn test_ml_dsa_65_kat() {
     let sig_bytes = sig.to_bytes();
 
     // Verify signature output matches expected hash
-    assert_hash_eq("ML-DSA-65 SIG", &sig_bytes, "101db54bb0e382a683b67ce1e5f0fa656bf158ffe9461649d0fc0eac68e5e065");
+    assert_hash_eq("ML-DSA-65 SIG", &sig_bytes, "990aac924a7c82c91f7a0d9db691641715b10787078f16a3cd74af1f8128c59e");
 
     // Verify signing determinism
     let sig2 = pqcrypto_sign::api::sign_internal(&sk, msg, &rnd);
@@ -136,7 +136,7 @@ fn test_slh_dsa_128s_kat() {
             }
 
             // Verify signature output matches expected hash
-            assert_hash_eq("SLH-DSA-128s SIG", &sig_bytes, "0263cf540a52711f8710dbda152b60235916de0ba8fed46262c494e1f8f492b4");
+            assert_hash_eq("SLH-DSA-128s SIG", &sig_bytes, "d05def95e9b47cd5429fe902bff1dda4e701a649c2e82f2f0f8bd3c69a5d1df2");
 
             // 3. Verification
             assert!(pqcrypto_sign::slh_dsa::verify(&pk, slh_msg, &sig));

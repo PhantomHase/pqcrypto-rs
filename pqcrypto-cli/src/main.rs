@@ -65,12 +65,9 @@ enum Commands {
         /// Secret key file
         #[arg(long)]
         sk: PathBuf,
-        /// KEM ciphertext file
-        #[arg(long)]
-        ct: PathBuf,
-        /// Encrypted message file
-        #[arg(long)]
-        ciphertext: PathBuf,
+        /// Encrypted input file (contains KEM ciphertext + AES ciphertext)
+        #[arg(short, long)]
+        input: PathBuf,
         /// Output file for decrypted message
         #[arg(short, long)]
         out: Option<PathBuf>,
@@ -115,13 +112,8 @@ fn main() -> Result<()> {
         Commands::KemEncrypt { pk, message, out } => {
             cmd_kem_encrypt(&pk, &message, out.as_deref())?;
         }
-        Commands::KemDecrypt {
-            sk,
-            ct,
-            ciphertext,
-            out,
-        } => {
-            cmd_kem_decrypt(&sk, &ct, &ciphertext, out.as_deref())?;
+        Commands::KemDecrypt { sk, input, out } => {
+            cmd_kem_decrypt(&sk, &input, out.as_deref())?;
         }
         Commands::Sign { sk, message, out } => {
             cmd_sign(&sk, &message, out.as_deref())?;
@@ -214,28 +206,30 @@ fn cmd_kem_encrypt(
 /// Decrypt a message.
 fn cmd_kem_decrypt(
     sk_path: &PathBuf,
-    ct_path: &PathBuf,
-    ciphertext_path: &PathBuf,
+    input_path: &PathBuf,
     out_path: Option<&std::path::Path>,
 ) -> Result<()> {
     println!("Loading secret key...");
     let sk_bytes = std::fs::read(sk_path).context("Failed to read secret key file")?;
     let sk = kem::MlKem768SecretKey::from_bytes(&sk_bytes).context("Invalid secret key format")?;
 
-    println!("Loading KEM ciphertext...");
-    let ct_bytes = std::fs::read(ct_path).context("Failed to read ciphertext file")?;
+    println!("Loading encrypted input data...");
+    let input_bytes = std::fs::read(input_path).context("Failed to read encrypted input file")?;
+
+    if input_bytes.len() < pqcrypto_kem::CT_LEN {
+        return Err(anyhow::anyhow!(
+            "Input file too short (expected at least {} bytes)",
+            pqcrypto_kem::CT_LEN
+        ));
+    }
+
+    let (ct_bytes, ciphertext) = input_bytes.split_at(pqcrypto_kem::CT_LEN);
     let ct = kem::MlKem768Ciphertext::from_bytes(
-        &ct_bytes[..pqcrypto_kem::CT_LEN]
-            .try_into()
-            .context("Invalid ciphertext length")?,
+        ct_bytes.try_into().context("Invalid KEM ciphertext size")?
     );
 
-    println!("Loading encrypted message...");
-    let ciphertext =
-        std::fs::read(ciphertext_path).context("Failed to read encrypted message file")?;
-
     println!("Decrypting...");
-    let plaintext = kem::hybrid_decrypt(&sk, &ct, &ciphertext, b"").context("Decryption failed")?;
+    let plaintext = kem::hybrid_decrypt(&sk, &ct, ciphertext, b"").context("Decryption failed")?;
 
     let default_path = PathBuf::from("decrypted.bin");
     let out_path = out_path.unwrap_or(&default_path);

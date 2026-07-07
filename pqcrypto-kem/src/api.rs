@@ -5,8 +5,8 @@
 
 use crate::decaps;
 use crate::encaps;
-use crate::keygen::{self, PublicKey, SecretKey};
-use crate::{KemError, CT_LEN, PK_LEN, SK_LEN, SS_LEN};
+use crate::keygen;
+use crate::{KemError, CT_LEN, SS_LEN};
 
 /// Generate a new ML-KEM-768 key pair.
 ///
@@ -19,13 +19,27 @@ use crate::{KemError, CT_LEN, PK_LEN, SK_LEN, SS_LEN};
 /// ```
 pub fn keygen() -> (MlKem768PublicKey, MlKem768SecretKey) {
     let (pk, sk) = keygen::keygen();
-    (MlKem768PublicKey(pk), MlKem768SecretKey(sk))
+    let bytes = keygen::encode_pk(&pk);
+    (
+        MlKem768PublicKey {
+            inner: pk,
+            bytes,
+        },
+        MlKem768SecretKey(sk),
+    )
 }
 
 /// Generate a new ML-KEM-768 key pair from explicit seeds (for testing/KAT).
 pub fn keygen_internal(d: &[u8; 32], z: &[u8; 32]) -> (MlKem768PublicKey, MlKem768SecretKey) {
     let (pk, sk) = keygen::keygen_internal(d, z);
-    (MlKem768PublicKey(pk), MlKem768SecretKey(sk))
+    let bytes = keygen::encode_pk(&pk);
+    (
+        MlKem768PublicKey {
+            inner: pk,
+            bytes,
+        },
+        MlKem768SecretKey(sk),
+    )
 }
 
 /// Encapsulate a shared secret to a public key.
@@ -39,7 +53,7 @@ pub fn keygen_internal(d: &[u8; 32], z: &[u8; 32]) -> (MlKem768PublicKey, MlKem7
 /// let (ct, ss) = encapsulate(&pk).unwrap();
 /// ```
 pub fn encapsulate(pk: &MlKem768PublicKey) -> Result<(MlKem768Ciphertext, SharedSecret), KemError> {
-    let (ct, ss) = encaps::encaps(&pk.0)?;
+    let (ct, ss) = encaps::encaps(&pk.inner)?;
     Ok((MlKem768Ciphertext(ct), SharedSecret(ss)))
 }
 
@@ -48,7 +62,7 @@ pub fn encapsulate_internal(
     pk: &MlKem768PublicKey,
     m: &[u8; 32],
 ) -> Result<(MlKem768Ciphertext, SharedSecret), KemError> {
-    let (ct, ss) = encaps::encaps_internal(&pk.0, m)?;
+    let (ct, ss) = encaps::encaps_internal(&pk.inner, m)?;
     Ok((MlKem768Ciphertext(ct), SharedSecret(ss)))
 }
 
@@ -74,25 +88,38 @@ pub fn decapsulate(
 }
 
 /// ML-KEM-768 public key.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MlKem768PublicKey(keygen::PublicKey);
+#[derive(Clone, Debug)]
+pub struct MlKem768PublicKey {
+    pub(crate) inner: keygen::PublicKey,
+    pub(crate) bytes: Vec<u8>,
+}
+
+impl PartialEq for MlKem768PublicKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for MlKem768PublicKey {}
 
 impl MlKem768PublicKey {
     /// Serialize the public key to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        keygen::encode_pk(&self.0)
+        self.bytes.clone()
     }
 
     /// Deserialize a public key from bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, KemError> {
         let pk = keygen::decode_pk(bytes)?;
-        Ok(Self(pk))
+        Ok(Self {
+            inner: pk,
+            bytes: bytes.to_vec(),
+        })
     }
 
     /// Get the raw bytes of the public key.
     pub fn as_bytes(&self) -> &[u8] {
-        // This is a simplification; in practice we'd cache the encoded bytes
-        &[]
+        &self.bytes
     }
 }
 
@@ -145,14 +172,6 @@ impl SharedSecret {
     }
 }
 
-/// Hybrid encryption: ML-KEM + AES-256-GCM.
-///
-/// Encrypts a message using:
-/// 1. ML-KEM to establish a shared secret
-/// 2. HKDF to derive an AES-256 key from the shared secret
-/// 3. AES-256-GCM to encrypt the message
-///
-/// Returns (ciphertext, encapsulated_key).
 pub fn hybrid_encrypt(
     pk: &MlKem768PublicKey,
     message: &[u8],
@@ -160,6 +179,7 @@ pub fn hybrid_encrypt(
 ) -> Result<(Vec<u8>, MlKem768Ciphertext), KemError> {
     use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit};
     use pqcrypto_core::sym::hkdf_extract_expand;
+    use rand::RngCore;
 
     // Step 1: ML-KEM encapsulation
     let (ct, ss) = encapsulate(pk)?;
@@ -173,13 +193,22 @@ pub fn hybrid_encrypt(
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| KemError::SerializationError(e.to_string()))?;
 
-    let nonce = aes_gcm::Nonce::from_slice(&[0u8; 12]);
+    // Generate a random 12-byte nonce
+    let mut nonce_bytes = [0u8; 12];
+    rand::rng().fill_bytes(&mut nonce_bytes);
+    let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
 
-    let ciphertext = cipher
-        .encrypt(nonce, message)
+    let payload = aes_gcm::aead::Payload { msg: message, aad };
+    let encrypted = cipher
+        .encrypt(nonce, payload)
         .map_err(|e| KemError::SerializationError(e.to_string()))?;
 
-    Ok((ciphertext, ct))
+    // Prepend nonce to ciphertext output
+    let mut output = Vec::with_capacity(12 + encrypted.len());
+    output.extend_from_slice(&nonce_bytes);
+    output.extend_from_slice(&encrypted);
+
+    Ok((output, ct))
 }
 
 /// Hybrid decryption: ML-KEM + AES-256-GCM.
@@ -209,10 +238,15 @@ pub fn hybrid_decrypt(
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| KemError::SerializationError(e.to_string()))?;
 
-    let nonce = aes_gcm::Nonce::from_slice(&[0u8; 12]);
+    if ciphertext.len() < 12 {
+        return Err(KemError::SerializationError("Ciphertext too short".into()));
+    }
+    let (nonce_bytes, aes_ciphertext) = ciphertext.split_at(12);
+    let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
 
+    let payload = aes_gcm::aead::Payload { msg: aes_ciphertext, aad };
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(nonce, payload)
         .map_err(|e| KemError::SerializationError(e.to_string()))?;
 
     Ok(plaintext)
