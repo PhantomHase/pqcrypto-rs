@@ -254,7 +254,7 @@ cargo bench
 
 2. **Side-channel hardening**: Constant-time behavior has not been formally verified across all arithmetic paths.
 
-3. **SLH-DSA performance**: SLH-DSA signing recomputes FORS/XMSS authentication paths and is intentionally slow in this educational implementation.
+3. **SLH-DSA performance**: Optimized! Stack-based allocation, pairwise node compression, and XMSS path pruning have eliminated redundant heap allocations in hot hash loops, significantly accelerating signing throughput.
 
 ## Roadmap
 
