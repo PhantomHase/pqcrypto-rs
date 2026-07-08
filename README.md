@@ -1,6 +1,6 @@
 # PQCrypto-RS
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2021-edition.svg)](https://www.rust-lang.org/)
 [![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20204%20%7C%20205-green.svg)](https://csrc.nist.gov/projects/post-quantum-cryptography)
 [![Tests](https://img.shields.io/badge/tests-98%20passed-brightgreen.svg)](#testing)
@@ -302,7 +302,7 @@ cargo doc --open
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [Apache License, Version 2.0](LICENSE).
 
 ## Contributing
 

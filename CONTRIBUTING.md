@@ -81,5 +81,5 @@ cargo test -p pqcrypto-wasm
 
 ## License
 
-By contributing, you agree that your contributions will be dual-licensed
-under Apache 2.0 and MIT.
+By contributing, you agree that your contributions will be licensed
+under the Apache License, Version 2.0 (Apache-2.0).
