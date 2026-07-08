@@ -27,7 +27,7 @@ fn main() {
 
     println!("5. Signing message...");
     let message = b"Hello, post-quantum world!";
-    let sig = pqcrypto_sign::api::sign(&dsk, message);
+    let sig = pqcrypto_sign::api::sign(&dsk, message).expect("failed to sign");
     println!("   Signature: {} bytes", sig.to_bytes().len());
 
     println!("6. Verifying signature...");

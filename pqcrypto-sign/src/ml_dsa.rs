@@ -724,7 +724,7 @@ fn encode_pk_bytes(rho: &[u8; SEED_LEN], t1: &PolyVec) -> Vec<u8> {
 // ============================================================================
 
 /// Sign a message using ML-DSA-65.
-pub fn sign(sk: &MlDsaSecretKey, message: &[u8]) -> MlDsaSignature {
+pub fn sign(sk: &MlDsaSecretKey, message: &[u8]) -> Result<MlDsaSignature, SignError> {
     use rand::RngCore;
 
     let mut rng = rand::thread_rng();
@@ -737,7 +737,7 @@ pub fn sign(sk: &MlDsaSecretKey, message: &[u8]) -> MlDsaSignature {
 }
 
 /// Internal signing with explicit randomness.
-pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) -> MlDsaSignature {
+pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) -> Result<MlDsaSignature, SignError> {
     // Step 2: μ = H(tr || M)
     let mut mu_input = Vec::with_capacity(SEED_LEN + message.len());
     mu_input.extend_from_slice(&sk.tr);
@@ -756,7 +756,7 @@ pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) 
 
     // Step 5-11: Rejection sampling loop
     let mut kappa = 0u16;
-    let max_iterations = 50000; // Prevent infinite loops
+    let max_iterations = 256; // Prevent infinite loops
     for _iter in 0..max_iterations {
         // Step 6: Sample y from [-γ₁, γ₁]
         let mut y = PolyVec::new(L);
@@ -820,16 +820,11 @@ pub fn sign_internal(sk: &MlDsaSecretKey, message: &[u8], rnd: &[u8; SEED_LEN]) 
         }
 
         // Success! Return signature
-        return MlDsaSignature { c_tilde, z, h };
+        return Ok(MlDsaSignature { c_tilde, z, h });
     }
 
     // If we reach here, signing failed after max iterations
-    // Return a dummy signature (this should not happen in practice)
-    MlDsaSignature {
-        c_tilde: [0u8; 48],
-        z: PolyVec::new(L),
-        h: PolyVec::new(K),
-    }
+    Err(SignError::RejectionSamplingExhausted)
 }
 
 /// Scalar multiplication: multiply polynomial by vector element-wise.
@@ -996,7 +991,7 @@ mod tests {
         let (pk, sk) = keygen();
         let message = b"Test message for ML-DSA";
 
-        let sig = sign(&sk, message);
+        let sig = sign(&sk, message).unwrap();
         let valid = verify(&pk, message, &sig);
 
         assert!(valid, "Signature verification failed");
@@ -1008,7 +1003,7 @@ mod tests {
         let message = b"Original message";
         let wrong_message = b"Wrong message";
 
-        let sig = sign(&sk, message);
+        let sig = sign(&sk, message).unwrap();
         let valid = verify(&pk, wrong_message, &sig);
 
         assert!(!valid, "Should reject wrong message");
@@ -1020,7 +1015,7 @@ mod tests {
         let (pk2, _sk2) = keygen();
         let message = b"Test message";
 
-        let sig = sign(&sk1, message);
+        let sig = sign(&sk1, message).unwrap();
         let valid = verify(&pk2, message, &sig);
 
         assert!(!valid, "Should reject with wrong public key");
@@ -1248,8 +1243,8 @@ mod tests {
         let message = b"Deterministic test";
         let rnd = [0x42u8; SEED_LEN];
 
-        let sig1 = sign_internal(&sk, message, &rnd);
-        let sig2 = sign_internal(&sk, message, &rnd);
+        let sig1 = sign_internal(&sk, message, &rnd).unwrap();
+        let sig2 = sign_internal(&sk, message, &rnd).unwrap();
 
         assert_eq!(sig1.c_tilde, sig2.c_tilde);
         assert_eq!(sig1.z, sig2.z);
@@ -1262,7 +1257,7 @@ mod tests {
 
         for i in 0..5 {
             let message = format!("Message {}", i);
-            let sig = sign(&sk, message.as_bytes());
+            let sig = sign(&sk, message.as_bytes()).unwrap();
             let valid = verify(&pk, message.as_bytes(), &sig);
             assert!(valid, "Signature {} failed", i);
         }
@@ -1273,7 +1268,7 @@ mod tests {
         let (pk, sk) = keygen();
         let message = vec![0xABu8; 10000]; // 10KB message
 
-        let sig = sign(&sk, &message);
+        let sig = sign(&sk, &message).unwrap();
         let valid = verify(&pk, &message, &sig);
         assert!(valid, "Large message signature failed");
     }
@@ -1283,7 +1278,7 @@ mod tests {
         let (pk, sk) = keygen();
         let message = b"";
 
-        let sig = sign(&sk, message);
+        let sig = sign(&sk, message).unwrap();
         let valid = verify(&pk, message, &sig);
         assert!(valid, "Empty message signature failed");
     }

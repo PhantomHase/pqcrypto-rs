@@ -28,3 +28,8 @@ rpassword = "7.3"
 
 [lints]
 workspace = true
+
+[[example]]
+name = "workspace_basic_usage"
+path = "../examples/basic_usage.rs"
+

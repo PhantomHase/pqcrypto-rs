@@ -23,9 +23,9 @@ pub fn keygen_internal(zeta: &[u8; SEED_LEN]) -> (MlDsa65PublicKey, MlDsa65Secre
 /// Sign a message using ML-DSA-65.
 ///
 /// Returns the signature.
-pub fn sign(sk: &MlDsa65SecretKey, message: &[u8]) -> MlDsa65Signature {
-    let sig = ml_dsa::sign(&sk.0, message);
-    MlDsa65Signature(sig)
+pub fn sign(sk: &MlDsa65SecretKey, message: &[u8]) -> Result<MlDsa65Signature, SignError> {
+    let sig = ml_dsa::sign(&sk.0, message)?;
+    Ok(MlDsa65Signature(sig))
 }
 
 /// Sign a message using ML-DSA-65 with explicit randomizer (for testing/KAT).
@@ -33,9 +33,9 @@ pub fn sign_internal(
     sk: &MlDsa65SecretKey,
     message: &[u8],
     rnd: &[u8; SEED_LEN],
-) -> MlDsa65Signature {
-    let sig = ml_dsa::sign_internal(&sk.0, message, rnd);
-    MlDsa65Signature(sig)
+) -> Result<MlDsa65Signature, SignError> {
+    let sig = ml_dsa::sign_internal(&sk.0, message, rnd)?;
+    Ok(MlDsa65Signature(sig))
 }
 
 /// Verify a signature.
@@ -228,7 +228,7 @@ mod tests {
         let (pk, sk) = keygen();
         let message = b"Hello, ML-DSA!";
 
-        let sig = sign(&sk, message);
+        let sig = sign(&sk, message).unwrap();
         assert!(verify(&pk, message, &sig));
     }
 
@@ -237,7 +237,7 @@ mod tests {
         let (_, sk) = keygen();
         let message = b"Serialization test";
 
-        let sig = sign(&sk, message);
+        let sig = sign(&sk, message).unwrap();
         let bytes = sig.to_bytes();
         let recovered = MlDsa65Signature::from_bytes(&bytes).unwrap();
 
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(sk.0.t0, recovered.0.t0);
 
         let message = b"Strict deserialization test message";
-        let sig = sign(&recovered, message);
+        let sig = sign(&recovered, message).unwrap();
         assert!(verify(&pk, message, &sig));
     }
 

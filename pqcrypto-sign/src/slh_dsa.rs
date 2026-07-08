@@ -199,6 +199,11 @@ fn make_addr(addr_type: u32) -> [u8; ADDR_SIZE] {
     addr
 }
 
+/// Set address type
+fn set_type(addr: &mut [u8; ADDR_SIZE], addr_type: u32) {
+    addr[12..16].copy_from_slice(&addr_type.to_be_bytes());
+}
+
 /// Set layer address
 fn set_layer(addr: &mut [u8; ADDR_SIZE], layer: u32) {
     addr[0..4].copy_from_slice(&layer.to_be_bytes());
@@ -465,7 +470,8 @@ fn xmss_verify(
 /// FORS secret key element
 fn fors_sk_gen(seed: &[u8; N], addr: &[u8; ADDR_SIZE], idx: u32, tree_idx: u32) -> [u8; N] {
     let mut sk_addr = *addr;
-    set_tree(&mut sk_addr, (tree_idx as u64) << 32 | idx as u64);
+    set_tree_height(&mut sk_addr, 0);
+    set_tree_index(&mut sk_addr, (tree_idx << K) | idx);
     prf(seed, &sk_addr)
 }
 
@@ -486,7 +492,8 @@ fn fors_node(
     let right = fors_node(sk_seed, 2 * idx + 1, height - 1, pk_seed, addr, tree_idx);
 
     let mut node_addr = *addr;
-    set_tree(&mut node_addr, (tree_idx as u64) << 32 | idx as u64);
+    set_tree_height(&mut node_addr, height);
+    set_tree_index(&mut node_addr, (tree_idx << (K as u32 - height)) | idx);
     h_node(pk_seed, &node_addr, &left, &right)
 }
 
@@ -559,8 +566,10 @@ fn fors_verify(
         let mut node_idx = idx as u32;
         for (h, sibling) in auth_paths[i].iter().enumerate() {
             let mut node_addr = *addr;
-            let tree_addr = ((i as u64) << 32) | ((node_idx / 2) as u64);
-            set_tree(&mut node_addr, tree_addr);
+            let parent_height = (h + 1) as u32;
+            let parent_idx = node_idx / 2;
+            set_tree_height(&mut node_addr, parent_height);
+            set_tree_index(&mut node_addr, ((i as u32) << (K as u32 - parent_height)) | parent_idx);
 
             if node_idx % 2 == 0 {
                 node = h_node(pk_seed, &node_addr, &node, sibling);
@@ -579,7 +588,9 @@ fn fors_verify(
         pk_data.extend_from_slice(root);
     }
     let mut pk_addr = *addr;
-    set_tree(&mut pk_addr, 0);
+    set_type(&mut pk_addr, ADDR_TYPE_FORS_PK);
+    set_tree_height(&mut pk_addr, 0);
+    set_tree_index(&mut pk_addr, 0);
     t_l(pk_seed, &pk_addr, &pk_data)
 }
 
@@ -1055,5 +1066,168 @@ mod tests {
             let valid = verify(&pk, message.as_bytes(), &sig);
             assert!(valid, "Signature {} failed", i);
         }
+    }
+
+    #[test]
+    fn test_fors_address_separation() {
+        let mut addr = make_addr(ADDR_TYPE_FORS);
+        set_tree(&mut addr, 0x1234567890ABCDEF);
+        set_keypair(&mut addr, 42);
+
+        // Test set_type
+        set_type(&mut addr, ADDR_TYPE_FORS_PK);
+        assert_eq!(addr[12..16], ADDR_TYPE_FORS_PK.to_be_bytes());
+        // Verify tree address (offset 4..12) and keypair address (offset 16..20) are preserved
+        assert_eq!(addr[4..12], 0x1234567890ABCDEFu64.to_be_bytes());
+        assert_eq!(addr[16..20], 42u32.to_be_bytes());
+
+        // Test sk_addr in fors_sk_gen logic
+        let mut sk_addr = addr;
+        set_tree_height(&mut sk_addr, 0);
+        let tree_idx = 5u32;
+        let idx = 25u32;
+        set_tree_index(&mut sk_addr, (tree_idx << K) | idx);
+
+        assert_eq!(sk_addr[4..12], 0x1234567890ABCDEFu64.to_be_bytes());
+        assert_eq!(sk_addr[16..20], 42u32.to_be_bytes());
+        assert_eq!(sk_addr[24..28], 0u32.to_be_bytes());
+        assert_eq!(sk_addr[28..32], ((5u32 << K) | 25u32).to_be_bytes());
+    }
+
+    #[test]
+    fn test_xmss_sign_verify() {
+        let sk_seed = [0x42u8; N];
+        let pk_seed = [0x24u8; N];
+        let mut addr = make_addr(ADDR_TYPE_TREE);
+        set_layer(&mut addr, 1);
+        set_tree(&mut addr, 0x1234567890);
+
+        let msg = [0x55u8; N];
+        let leaf_idx = 3u32;
+
+        let (auth_path, wots_sig) = xmss_sign(&msg, &sk_seed, leaf_idx, &pk_seed, &addr);
+        let sig = (wots_sig, &auth_path);
+        let root = xmss_verify(&msg, &sig, &pk_seed, &addr, leaf_idx);
+
+        // Reconstruct root using xmss_node for validation
+        let expected_root = xmss_node(&sk_seed, 0, H_PRIME as u32, &pk_seed, &addr);
+        assert_eq!(root, expected_root, "XMSS verification root mismatch");
+    }
+
+    #[test]
+    fn test_fips205_address_layouts_and_separation() {
+        // Create base FORS address
+        let mut addr = make_addr(ADDR_TYPE_FORS);
+        set_tree(&mut addr, 0x1122334455667788);
+        set_keypair(&mut addr, 0x99AABBCC);
+
+        // Verify base fields
+        assert_eq!(addr[0..4], [0, 0, 0, 0], "Layer should be 0 by default");
+        assert_eq!(addr[4..12], 0x1122334455667788u64.to_be_bytes(), "Tree address mismatch");
+        assert_eq!(addr[12..16], ADDR_TYPE_FORS.to_be_bytes(), "Type mismatch");
+        assert_eq!(addr[16..20], 0x99AABBCCu32.to_be_bytes(), "Keypair address mismatch");
+
+        // Verify that setting type to FORS_PK preserves tree and keypair addresses
+        let mut pk_addr = addr;
+        set_type(&mut pk_addr, ADDR_TYPE_FORS_PK);
+        set_tree_height(&mut pk_addr, 0);
+        set_tree_index(&mut pk_addr, 0);
+
+        assert_eq!(pk_addr[12..16], ADDR_TYPE_FORS_PK.to_be_bytes(), "PK type mismatch");
+        assert_eq!(pk_addr[4..12], 0x1122334455667788u64.to_be_bytes(), "PK tree address modified");
+        assert_eq!(pk_addr[16..20], 0x99AABBCCu32.to_be_bytes(), "PK keypair address modified");
+
+        // Verify continuous tree indexing for FORS key generation
+        let tree_idx = 5u32;
+        let leaf_idx = 25u32;
+        for height in 0..=K {
+            let mut node_addr = addr;
+            let node_idx = (leaf_idx >> height) as u32;
+            set_tree_height(&mut node_addr, height as u32);
+            set_tree_index(&mut node_addr, (tree_idx << (K as u32 - height as u32)) | node_idx);
+
+            // Assert tree_address and keypair_address are unchanged
+            assert_eq!(node_addr[4..12], 0x1122334455667788u64.to_be_bytes());
+            assert_eq!(node_addr[16..20], 0x99AABBCCu32.to_be_bytes());
+
+            // Assert continuous index field encoding
+            let expected_idx = (tree_idx << (K as u32 - height as u32)) | node_idx;
+            // The index is written at bytes 28..32 in this implementation
+            let actual_idx = u32::from_be_bytes([node_addr[28], node_addr[29], node_addr[30], node_addr[31]]);
+            assert_eq!(actual_idx, expected_idx, "Continuous index encoding incorrect at height {}", height);
+        }
+    }
+
+    #[test]
+    fn test_fips_205_address_layout_divergence() {
+        // Under FIPS 205 Section 4.2.2:
+        // - Tree Height: bytes 20..24
+        // - Tree Index: bytes 24..28
+        // - Unused: bytes 28..32
+        //
+        // In this implementation:
+        // - Tree Height is mapped to bytes 24..28
+        // - Tree Index is mapped to bytes 28..32
+        // - Bytes 20..24 are left as zero (unused space)
+        
+        let mut addr = make_addr(ADDR_TYPE_FORS);
+        set_tree_height(&mut addr, 12);
+        set_tree_index(&mut addr, 34);
+
+        // Documenting divergence:
+        assert_eq!(addr[20..24], [0, 0, 0, 0], "Implementation leaves bytes 20..24 as 0 (unused in code, but should be tree height in FIPS 205)");
+        assert_eq!(addr[24..28], 12u32.to_be_bytes(), "Implementation puts tree height at bytes 24..28 (should be 20..24 in FIPS 205)");
+        assert_eq!(addr[28..32], 34u32.to_be_bytes(), "Implementation puts tree index at bytes 28..32 (should be 24..28 in FIPS 205)");
+    }
+
+    #[test]
+    fn test_xmss_sign_verify_round_trip() {
+        let sk_seed = [0x55u8; N];
+        let pk_seed = [0xAAu8; N];
+        let mut addr = make_addr(ADDR_TYPE_TREE);
+        set_layer(&mut addr, 2);
+        set_tree(&mut addr, 0x123456);
+
+        let msg = [0x11u8; N];
+        let leaf_idx = 7u32;
+
+        let (auth_path, wots_sig) = xmss_sign(&msg, &sk_seed, leaf_idx, &pk_seed, &addr);
+        let root = xmss_verify(&msg, &(wots_sig, &auth_path), &pk_seed, &addr, leaf_idx);
+        
+        let expected_root = xmss_node(&sk_seed, 0, H_PRIME as u32, &pk_seed, &addr);
+        assert_eq!(root, expected_root, "XMSS verification recovered root must match expected Merkle root");
+    }
+
+    #[test]
+    fn test_fors_domain_separation_in_signature() {
+        let (pk, sk) = keygen();
+        let message = b"Test message for FORS domain separation";
+        let sig = sign(&sk, message);
+
+        let digest = h_msg(&sig.r, &pk.pk_seed, &pk.pk_root, message);
+        assert_eq!(sig.tree_idx, digest.tree_idx);
+        assert_eq!(sig.leaf_idx, digest.leaf_idx);
+
+        let mut fors_addr = make_addr(ADDR_TYPE_FORS);
+        set_tree(&mut fors_addr, sig.tree_idx);
+        set_keypair(&mut fors_addr, sig.leaf_idx);
+
+        // Check initial FORS address details
+        assert_eq!(fors_addr[12..16], ADDR_TYPE_FORS.to_be_bytes(), "Type must be FORS");
+        assert_eq!(fors_addr[4..12], sig.tree_idx.to_be_bytes(), "Tree index must match");
+        assert_eq!(fors_addr[16..20], sig.leaf_idx.to_be_bytes(), "Keypair index must match");
+
+        // After verification, the public key address must have ADDR_TYPE_FORS_PK type,
+        // and height and index fields cleared.
+        let mut pk_addr = fors_addr;
+        set_type(&mut pk_addr, ADDR_TYPE_FORS_PK);
+        set_tree_height(&mut pk_addr, 0);
+        set_tree_index(&mut pk_addr, 0);
+
+        assert_eq!(pk_addr[12..16], ADDR_TYPE_FORS_PK.to_be_bytes(), "Type must be FORS_PK");
+        assert_eq!(pk_addr[4..12], sig.tree_idx.to_be_bytes(), "Tree index must be preserved");
+        assert_eq!(pk_addr[16..20], sig.leaf_idx.to_be_bytes(), "Keypair index must be preserved");
+        assert_eq!(pk_addr[24..28], 0u32.to_be_bytes(), "Tree height must be cleared");
+        assert_eq!(pk_addr[28..32], 0u32.to_be_bytes(), "Tree index must be cleared");
     }
 }

@@ -174,7 +174,8 @@ pub fn ml_dsa_65_sign(sk_hex_or_b64: &str, message: &[u8]) -> Result<String, Str
     let (sk_bytes, is_b64) = decode_input(sk_hex_or_b64, 2912)?;
     let sk = pqcrypto_sign::api::MlDsa65SecretKey::from_bytes(&sk_bytes)
         .map_err(|e| format!("Invalid secret key: {}", e))?;
-    let sig = pqcrypto_sign::api::sign(&sk, message);
+    let sig = pqcrypto_sign::api::sign(&sk, message)
+        .map_err(|e| format!("Signing failed: {}", e))?;
     Ok(encode_output(&sig.to_bytes(), is_b64))
 }
 

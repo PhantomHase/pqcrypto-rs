@@ -258,7 +258,7 @@ fn cmd_sign(
     let sk = sign::MlDsa65SecretKey::from_bytes(&sk_bytes).context("Invalid secret key format")?;
 
     println!("Signing with ML-DSA-65...");
-    let sig = sign::sign(&sk, &message);
+    let sig = sign::sign(&sk, &message).context("Signing failed")?;
 
     let default_path = PathBuf::from("signature.bin");
     let out_path = out_path.unwrap_or(&default_path);

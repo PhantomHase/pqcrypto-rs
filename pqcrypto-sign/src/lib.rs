@@ -65,6 +65,8 @@ pub enum SignError {
     SerializationError(String),
     /// Verification failed
     VerificationFailed,
+    /// Rejection sampling exhausted during signature generation
+    RejectionSamplingExhausted,
 }
 
 impl std::fmt::Display for SignError {
@@ -75,6 +77,7 @@ impl std::fmt::Display for SignError {
             SignError::InvalidSignature => write!(f, "Invalid signature"),
             SignError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
             SignError::VerificationFailed => write!(f, "Signature verification failed"),
+            SignError::RejectionSamplingExhausted => write!(f, "Rejection sampling exhausted during signature generation"),
         }
     }
 }
