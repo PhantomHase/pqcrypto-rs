@@ -1,4 +1,5 @@
 # PQCrypto-RS
+**NOT FINISHED**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2021-edition.svg)](https://www.rust-lang.org/)
